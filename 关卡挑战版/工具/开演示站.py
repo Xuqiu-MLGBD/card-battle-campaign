@@ -21,7 +21,19 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-项目 = os.path.dirname(HERE)
+
+
+def _找项目根(起):
+    """往上找含 .git 的那一层当项目根（工具收进 工具/ 后，别把 cwd 算错）。"""
+    d = 起
+    for _ in range(5):
+        if os.path.isdir(os.path.join(d, ".git")):
+            return d
+        d = os.path.dirname(d)
+    return os.path.dirname(起)
+
+
+项目 = _找项目根(HERE)
 
 
 def 找程序(名, 候选):
@@ -39,8 +51,19 @@ GH = 找程序("gh", [r"C:\Program Files\GitHub CLI\gh.exe"])
 GIT = 找程序("git", [r"C:\Program Files\Git\cmd\git.exe"])
 
 
+def 环境():
+    """把 Git 的目录塞进 PATH 再调 gh/git。
+    ⚠ 实测坑：`gh repo view` 会**内部调用 git**（在仓库目录里时用它解析仓库）；
+      而这个脚本的 PATH 可能还是安装 Git 之前那份 —— 于是 gh 报
+      "unable to find git executable in PATH"（看起来像 gh 坏了，其实是找不到 git）。"""
+    e = os.environ.copy()
+    if GIT:
+        e["PATH"] = os.path.dirname(GIT) + os.pathsep + e.get("PATH", "")
+    return e
+
+
 def 跑(命令, 允许失败=False):
-    r = subprocess.run(命令, cwd=项目, capture_output=True)
+    r = subprocess.run(命令, cwd=项目, capture_output=True, env=环境())
     出 = (r.stdout or b"").decode("utf-8", "ignore") + (r.stderr or b"").decode("utf-8", "ignore")
     if r.returncode != 0 and not 允许失败:
         raise SystemExit("[出错] " + " ".join(命令) + "\n" + 出.strip())
