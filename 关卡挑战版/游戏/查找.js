@@ -1,0 +1,255 @@
+/* 关卡挑战版 · 元素查找层（游戏/查找.js —— MMD 沙盒适配，2026-10-04）
+ * ==========================================================================
+ * 为什么单独一个模块（而不是留在 界面.js 里）：
+ *   ① 沙盒的**单条规则**有硬上限（宿主 100000 UTF-16）；`界面.js` 本来就贴着门限，
+ *      多这一层就被打包器当场拒了（实测：101571 > 99800）；
+ *   ② 这一层的职责与"界面"无关 —— 它解决的是**宿主环境**问题，独立成模块才说得清。
+ *
+ * 它解决什么（来自 MMD 沙盒文档 §2.1 / §2.3，实测踩过）：
+ *   · 脚本**装卡那一刻抽出、按规则顺序跑一次**；执行时页面 DOM 可能还没建好（§2.6 真红线）；
+ *   · 平台**全局改写** `Document.prototype.querySelector / getElementById`……：在 `message:mount`
+ *     回调里这些查找被**收窄到"气泡范围"**，而那个游标跨 `await`/`setTimeout` 就失效。
+ *     我们的牌桌在**舞台根**（#hs-sandbox-root）里、不在气泡里 —— 用 id 找就会拿到 null，
+ *     于是所有按 id 接的点击全断（用户 2026-10-04 报的"点设置、结束回合均无反应"就是这个长相：
+ *     报告写着 `关键id缺 playerhero/opposinghero`，而按 class 找的 `.playerHeroHealth` 却在）。
+ *
+ * 三条对策：
+ *   ① **根部作用域**：`根.querySelector(...)` 命中的是 `Element.prototype`，平台没改它；
+ *   ② **自愈**：按结构找到后**把缺的 id 补回去** —— 上游 index.js / attack.js 大量按 id 找元素，
+ *      补上之后它们一起恢复（不改上游一个字）；
+ *   ③ **留痕**：在根上挂捕获阶段的点击日志，让"点了没反应"能分辨
+ *      "点击没落到按钮上"还是"落上了但后面那条链没走"。
+ */
+(function (W) {
+  'use strict';
+  if (W.HS_UI && W.HS_UI.找) return;
+  var d = W.document;
+
+  /* 根：沙盒是舞台根，独立网页就是 body。**永远不要**退回 document 做第一选择 ——
+     document 的那几个方法正是被平台改写的那些。 */
+  function 根元素() {
+    try {
+      if (W.HS_SANDBOX && typeof W.HS_SANDBOX.根 === 'function') {
+        var r = W.HS_SANDBOX.根();
+        if (r && r.querySelector) return r;
+      }
+    } catch (e) {}
+    return (d && (d.body || d.documentElement)) || null;
+  }
+
+  var 自愈过 = {};
+  function 报自愈(内容) {
+    try { if (W.HS_CHECK) W.HS_CHECK.报(8, 'UI_INVALID_INPUT', 内容, '提示'); } catch (e) {}
+  }
+
+  /* 找一个元素：先根部作用域，再退回 document；给了 `要的id` 就在缺 id 时补回去。 */
+  function 找(选择器, 要的id) {
+    var 根 = 根元素(), el = null;
+    try { el = 根 ? 根.querySelector(选择器) : null; } catch (e) {}
+    if (!el) { try { el = d.querySelector(选择器); } catch (e) {} }
+    if (el && 要的id && el.id !== 要的id) {
+      var 占 = null;
+      try { 占 = d.getElementById(要的id); } catch (e) {}
+      if (!占 || 占 === el) {
+        try {
+          el.id = 要的id;
+          if (!自愈过[要的id]) { 自愈过[要的id] = 1; 报自愈({ 自愈: '补回 id', id: 要的id, 说明: '宿主改写过查找，按结构找到后补 id' }); }
+        } catch (e) {}
+      }
+    }
+    return el;
+  }
+  function 找id(id) { return 找('#' + id, id); }
+  function 全部(选择器) {
+    var 出 = [];
+    try { 出 = Array.prototype.slice.call(根元素().querySelectorAll(选择器)); } catch (e) { 出 = []; }
+    if (!出.length) { try { 出 = Array.prototype.slice.call(d.querySelectorAll(选择器)); } catch (e) {} }
+    return 出;
+  }
+
+  /* ★★ 补齐骨架 id：按**结构**找到关键元素，把缺掉的 id 补回去。
+     结构锚点都来自骨架本身（index.html），与 class 名称无关的那些用文字/父子关系兜底：
+       #cards          ← `.cards`
+       #game           ← `#contents > #game`
+       #playerhero     ← `.playerHeroHealth` 的最近 `.cardinplay` 祖先
+       #opposinghero   ← `.opposingHeroHealth` 的最近 `.cardinplay` 祖先
+       #manacontainer  ← 任一 `.manabox` 的父节点
+       #endturn        ← 文字是 END TURN / ENEMY TURN 的按钮
+     返回补了几个（0 = 什么都没缺）。 */
+  function 补齐骨架id() {
+    var 根 = 根元素(), 补 = 0;
+    if (!根 || !根.querySelector) return 0;
+    function 查(sel) { try { return 根.querySelector(sel); } catch (e) { return null; } }
+    function 有(id) { return 查('#' + id); }
+    function 定(id, el) { if (el && !el.id) { try { el.id = id; 补++; } catch (e) {} } }
+    if (!有('cards')) 定('cards', 查('.cards'));
+    if (!有('game')) 定('game', 查('#contents > #game') || 查('#game'));
+    var 我血 = 查('.playerHeroHealth');
+    if (!有('playerhero')) 定('playerhero', 我血 && 我血.closest ? 我血.closest('.cardinplay') : null);
+    var 敌血 = 查('.opposingHeroHealth');
+    if (!有('opposinghero')) 定('opposinghero', 敌血 && 敌血.closest ? 敌血.closest('.cardinplay') : null);
+    if (!有('manacontainer')) {
+      var 盒 = 查('.manabox');
+      定('manacontainer', 盒 && 盒.parentElement);
+    }
+    if (!有('endturn')) {
+      var 钮 = Array.prototype.filter.call(根.querySelectorAll('button'), function (b) {
+        return /END TURN|ENEMY TURN/i.test(b.textContent || '');
+      });
+      定('endturn', 钮[0]);
+    }
+    /* ★ 两座英雄容器：**缺了就自己造一座**（不只是补 id）。
+       实测（真机 + 技能自带的平台全景预览里都复现）：
+         骨架字符串里明明有 `<div class="cardinplay" id="playerhero">`，
+         但注入到舞台之后，`#playerhero` / `#opposinghero` **既查不到 id、也查不到元素** ——
+         宿主会把这两个节点弄丢（`cards`/`contents`/`endturn` 却都在）。
+       而它们承载两件事：① 血量数字（上游 `startGame()` 第一句就读 `.opposingHeroHealth`，
+       读不到就抛错、后面整段发牌都不执行 → "没有手牌"）；② 英雄的点击/攻击落点。
+       结构与骨架里那份一致（界面.js 的注释里记着），所以直接照原样造。
+       宁可我们造一座，也不要一个缺了英雄的战场。 */
+    [['playerhero', 'playerHeroHealth', 'playerhero'],
+     ['opposinghero', 'opposingHeroHealth', 'opponenthero']].forEach(function (t) {
+      if (有(t[0])) return;
+      var 宿主 = 查('#game') || 查('#contents') || 根;
+      if (!宿主) return;
+      try {
+        var 盒 = d.createElement('div');
+        盒.className = 'cardinplay ' + t[2];        // 两个选择器家族都覆盖（id 与 class 都有规则）
+        盒.id = t[0];
+        var 甲 = d.createElement('div');
+        var 乙 = d.createElement('div');
+        var 血 = d.createElement('div');
+        血.className = t[1];
+        血.textContent = '30';
+        乙.appendChild(血);
+        盒.appendChild(甲);
+        盒.appendChild(乙);
+        宿主.appendChild(盒);
+        补++;
+      } catch (err) {}
+    });
+    /* ★ 两个"提示元素"缺了就**造一个**（不是找，是补）。
+       为什么必须要它们存在：上游"结束回合"的回调是一条**直线**调用链 ——
+         `getElementById("gifhint").style.backgroundImage = …` → `getElementById("texthint").innerText = …` → `opponentTurn()`
+       其中任何一句拿到 null 就抛 TypeError，**监听器当场中断**，`opponentTurn()` 永远不会执行
+       （用户 2026-10-04 问的正是这个）。它们只是装饰性的提示条，我们并不显示 ——
+       那就造两个隐藏的空壳顶着，保证上游那两句话不会抛。宁可多个空 div，也不要一颗死按钮。 */
+    ['gifhint', 'texthint'].forEach(function (id) {
+      if (有(id)) return;
+      try {
+        var e = d.createElement('div');
+        e.id = id;
+        e.style.display = 'none';
+        根.appendChild(e);
+        补++;
+      } catch (err) {}
+    });
+    if (补) 报自愈({ 自愈: '补齐骨架 id', 补了: 补, 说明: '宿主环境里 id 不可靠，按结构补回' });
+    return 补;
+  }
+
+  /* ---------------------------------------------------------------- 点击留痕
+     真机上"点了没反应"最难分辨的是**点击到底有没有落到那个元素上**。捕获阶段必然先于任何处理器，
+     所以这个监听永远能记到：日志里有 `#endturn` 而"最近播过的动作"为空 → 接上了、后面的链没走；
+     日志里压根没有那个元素 → 点击**根本没落到它身上**（多半被别的图层盖住）。 */
+  var 载入时刻 = (W.Date && W.Date.now) ? W.Date.now() : 0;
+  var 点击日志 = [];
+  function 记点击(el) {
+    var 名 = el ? (el.id ? '#' + el.id
+      : (el.className ? '.' + String(el.className).trim().split(/\s+/)[0] : el.tagName)) : '（无目标）';
+    var 秒 = ((W.Date && W.Date.now ? W.Date.now() : 0) - 载入时刻) / 1000;
+    点击日志.push(名 + ' @' + 秒.toFixed(1) + 's');
+    if (点击日志.length > 8) 点击日志.shift();
+  }
+  try {
+    var 监听根 = 根元素();
+    if (监听根 && 监听根.addEventListener) 监听根.addEventListener('click', function (e) { 记点击(e.target); 盯结束回合(e); }, true);
+  } catch (e) {}
+
+  /* ---------------------------------------------------------------- 结束回合的"安全网"
+     上游那个回调是**直线链**：查 `#endturn` → 查 `#gifhint` → 查 `#texhint` → 才调 `opponentTurn()`。
+     任意一句拿到 null 就抛错中断，`opponentTurn()` 永远不执行（而且浏览器不会重试）。
+     我们**不改上游**（它逐字保留），改用"点了以后回头看一眼"的办法：
+       点下 #endturn 400ms 后检查 ——
+         · `回合留痕.opponentTurn` 涨了 → 上游那条路走通了，什么都不做；
+         · `playersTurn` 已经变成 false → 上游至少进了 `opponentTurn`，也不插手；
+         · 两者都没发生 → 判定"那条链断了"，**我们自己把回合推进过去**，并记一条提示。
+     这样无论是"加载期绑定没接上"还是"回调中途抛错"，按钮都不会是死的。 */
+  var 盯过 = 0;
+  function 盯结束回合(e) {
+    var el = e && e.target;
+    if (!el || !el.closest) return;
+    if (!el.closest('#endturn')) return;
+    盯过++;
+    var 序号 = 盯过, 前次 = (W.HS_TURN_LOG && W.HS_TURN_LOG.opponentTurn) || 0;
+    W.setTimeout(function () {
+      var 现在 = (W.HS_TURN_LOG && W.HS_TURN_LOG.opponentTurn) || 0;
+      if (现在 > 前次) return;                       // 上游走通了
+      if (W.playersTurn === false) return;           // 上游至少进了 opponentTurn
+      try {
+        if (W.HS_CHECK) {
+          W.HS_CHECK.报(6, 'UI_INVALID_INPUT', {
+            安全网: '结束回合的链断了，由我们推进', 第几次: 序号,
+            上游: typeof W.opponentTurn, playersTurn: W.playersTurn
+          }, '严重');
+        }
+      } catch (err) {}
+      try {
+        if (typeof W.opponentTurn === 'function') W.opponentTurn();
+        else if (W.HS_兜底回合 && W.HS_兜底回合.开始我方回合) W.HS_兜底回合.开始我方回合();
+      } catch (err) {}
+    }, 400);
+  }
+
+  /* ⚠ 名字里**不要**用 `HS_UI`：`界面.js` 早就把 `W.HS_UI` 用作"刷新任务区"那个小导出，
+     两边都叫 HS_UI 就会互相覆盖（第一版就撞了：`HS_UI.找` 变 undefined）。
+     对外用 `HS_查找`，另留 `HS_UI_*` 一组旧名字给检错层与自检用。 */
+  W.HS_查找 = {
+    版本: 1,
+    根: 根元素,
+    找: 找,
+    找id: 找id,
+    全部: 全部,
+    补齐: 补齐骨架id,
+    点击日志: function () { return 点击日志.slice(); }
+  };
+  W.HS_UI_找 = 找;
+  W.HS_UI_找id = 找id;
+  W.HS_UI_全部 = 全部;
+  W.HS_UI_根 = 根元素;
+  W.HS_UI_补齐 = 补齐骨架id;
+  W.HS_UI_点击日志 = function () { return 点击日志.slice(); };
+  /* 供"本局信息"直接打印的那两行（放这里是为了给 界面.js 省长度：沙盒单条规则卡得很死）。
+     回合留痕从 window 上读，**不依赖 界面.js 的内部变量**。 */
+  W.HS_UI_点击摘要 = function () {
+    var t = (W.HS_TURN_LOG && typeof W.HS_TURN_LOG === 'object') ? W.HS_TURN_LOG : { opponentTurn: 0, playerTurn: 0 };
+    return ['--- 最近 8 次点击（目标 @ 时刻）---',
+            点击日志.length ? 点击日志.join('  |  ') : '(还没有点击)',
+            '回合留痕  : opponentTurn=' + (t.opponentTurn || 0) + '  playerTurn=' + (t.playerTurn || 0)];
+  };
+
+  /* ---------------------------------------------------------------- 自愈的**触发**
+     ⚠ 一条实测教训：光把 `补齐()` 导出还不够，得有人**在对的时候**叫它。
+       第一版只让 `外壳.js` 的引导叫一次 —— 而那个文件排在**本文件之前**（它在 index.html 的第一段、
+       本文件在第二段），轮到它执行时 `HS_UI_补齐` 还不存在 → 静默跳过 ✗。
+       真机上于是仍然"关键 id 缺 playerhero/opposinghero"。
+     这里让本文件**自己负责把这件事做完**：立刻试一次、load 之后试一次、再最多补 12 次（每 400ms），
+     直到骨架里该有的 id 都在（或时间用完）。幂等、便宜、不依赖任何人的加载顺序。 */
+  var 补次 = 0;
+  function 试补齐() {
+    补次++;
+    var 还缺 = 补齐骨架id();
+    if (还缺 === 0) return;                      // 齐了，收工
+    if (补次 >= 14) {                            // 约 5.6 秒还没齐：记一条"严重"，别再刷
+      报自愈({ 自愈: '骨架 id 补不齐', 试了: 补次, 说明: '骨架可能没注入，或元素结构与预期不同' });
+      return;
+    }
+    try { if (W.setTimeout) W.setTimeout(试补齐, 400); } catch (e) {}
+  }
+  if (d && d.addEventListener) {
+    if (d.readyState === 'complete') 试补齐();
+    else d.addEventListener('DOMContentLoaded', 试补齐, { once: true });
+    W.addEventListener && W.addEventListener('load', 试补齐, { once: true });
+  }
+  试补齐();
+})(typeof window !== 'undefined' ? window : globalThis);

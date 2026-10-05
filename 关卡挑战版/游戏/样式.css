@@ -1,0 +1,1816 @@
+/* 关卡挑战版 · 我们的样式
+ * ===============================================================
+ * 这个文件由 index.html 在**头里**加载（排在 styles.css 与 animations.css 之后），
+ * 不是由 JS 注入的。原因很实在：background-image 的请求在**解析 body 的时候**就发出去了，
+ * 等脚本跑起来再压平已经晚了 —— 实测会白打出 11 个 404（背景图/光标/字体各来一趟）。
+ * 放在 head 里当普通样式表，浏览器算出的最终样式里从来没有那些图，一次请求都不会发。
+ *
+ * 分两段：
+ *   段 1 「去炉石」 把上游 styles.css 里 21 处 url(src/...) 与 21 处 Belwe 字体声明压平
+ *   段 2 「简洁窗体」 ★ 我们自己的外观 —— 将来整套 UI 配布与动效从这里开始改
+ */
+/* ================================================================
+ * 段 1 · 去炉石：压平所有暴雪素材引用
+ * ================================================================ */
+
+:root {
+	/* ★ 字体：不去改上游那 21 处声明，直接把整个文档的字体族换掉。
+	   上游用的 Belwe 是暴雪的商用字体，文件已从包里删掉。 */
+	--hs-font: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+
+	/* ★ 配色：整套界面的取色都收在这 8 个变量里，将来换皮只动这一段 */
+	--hs-bg: #0f131a;        /* 窗体底 */
+	--hs-panel: #161d29;     /* 面板 */
+	--hs-soft: #212b3b;      /* 卡面 / 次级面板 */
+	--hs-line: #2c3a4d;      /* 描边 */
+	--hs-text: #dbe4f0;      /* 正文 */
+	--hs-dim: #8b9cb0;       /* 次要文字 */
+	--hs-accent: #7fb2e5;    /* 强调 */
+	--hs-ok: #6fbf73;        /* 可用 / 玩家回合 */
+	--hs-danger: #e06b6b;    /* 非法 / 减益 */
+}
+
+* {
+	font-family: var(--hs-font) !important;
+}
+
+/* 上游引用了 src/images · src/cards · src/hints · src/cursor · src/fonts 的规则，全部压平。
+   注意**不含** .card-face / .cardinplay —— 那两处的图由 deck.js 写在行内样式上，
+   已经被 strip.js 换成透明图；留着它们，将来想给自己的卡挂图直接改 imageString 即可。 */
+.bg-image,
+#load,
+#mainmenu,
+#openpacks,
+#howtoplay,
+#victoryImg1,
+#victoryImg2,
+#hoggerposter,
+#vs,
+#gifhint,
+.playerhero,
+.opponenthero,
+.playerheropower,
+.player-deck,
+.computer-deck,
+.enemycard,
+#packOpenAnimElem,
+#cardpackimg,
+#confirm,
+.divineShield,
+.taunt,
+.legendaryinplay {
+	background-image: none !important;
+}
+
+/* 上游自定义了 4 张 .png 光标，换回系统光标 */
+body,
+body:active,
+.card:active,
+.cardinplay:hover,
+.cardinplay:active,
+button:hover,
+button:active,
+.pack:active {
+	cursor: auto !important;
+}
+
+/* 入场 / 闪光 / 震屏 —— 这一批是「炉石式演出」，全停。
+   ⚠ 2026-10-03（阶段 F）：上游那张 `animations.css` **已经整份出列**（64 条规则里只有 2 条
+   与我们的界面有关，其余都是主菜单/商店/教程流程的），所以下面这两条"界面机制动效"
+   由**我们自己**在文件末尾重新实现：
+     · 卡落位的缩放弹入 → 我们自己的 `.hs-deploy`（类名也换成我们自己的，见 卡库.js 造场上卡）
+     · 设置抽屉的开合  → `#gamemenuContent.openMenuAnim`：类名仍是上游的 `openMenuAnim`，
+       因为加它的那一行在 `index.html` 的内联脚本里（上游代码，一字不许动），
+       但**动画本身是我们写的**（`@keyframes hs-menu-in`）。 */
+.onLoadPlayerAnim,
+.onLoadComputerAnim,
+.tutorialHeroAnim,
+.tutorialHoggerAnim,
+.legendaryFlipAnim,
+.epicFlipAnim,
+.theLichKingShake,
+.deathwingShake,
+.shakeScreenAnim,
+.zoomOutAnim {
+	animation: none !important;
+}
+
+/* 恢复上游原来的单位攻击划线 `#svg / #svgpath`（用户 2026-10-03）。
+   上游的 attack.js 直接使用浏览器 clientX/clientY，它本来就在**视口坐标系**里；
+   #svg 也是 100% 视口大小。因此舞台内部做等比缩放不会把这条线画歪 ——
+   我此前因为担心缩放而整层 display:none，是过度处理，结果单位攻击只剩高光没有线。
+
+   两条箭头从此职责分开：
+     · #svg：场上单位 → 攻击目标（上游红色虚线）
+     · #hs-arrow：手牌 → 部署位（我们的绿色实线）
+   三个旧的红圈/三角光标仍隐藏，只恢复真正的划线。 */
+/* 上游那条红色**虚线**：保留、并显示（用户 2026-10-03 澄清：
+   *「什么叫整层关掉，我要你整层呈现，我要完整的虚线加箭头！」*）。
+   它缺的只是**箭头尖** —— 那个尖原本是 `#arrowcursor` 那张光标图，美术剥离时一起删了，
+   于是只剩光秃秃一条线。尖由 interact.js 用 `#hs-arrowhead` 补上（颜色与虚线一致）。
+
+   ⚠ 这里**不写 display**（既不是 block 也不是 none）：显示/隐藏完全交给上游 attack.js 的
+   内联开关 —— 一写 `!important` 就会把它的"隐藏"也锁死，箭头就收不回去了（上一轮踩过）。 */
+/* 上游虚线的箭头尖：我们自己补的三角，颜色与虚线一致（#e82e12） */
+#hs-arrowhead {
+	fill: #e82e12;
+}
+
+#svg {
+	position: fixed !important;
+	left: 0 !important;
+	top: 0 !important;
+	right: 0 !important;
+	bottom: 0 !important;
+	/* ⚠ 两个坑叠在一起：
+	   ① 不能用 100vw / 100vh —— **vw 含竖滚动条的宽度**，会比内容区宽出一个滚动条
+	      （实测 1921 vs 1913 = 8px），整页因此多出横向滚动条。
+	   ② 也不能写 `width:auto` —— svg 有**固有尺寸 300×150**，auto 不会撑开，
+	      箭头层就缩成左上角那一小块，线画到外面去了（实测 rect 300×150）。
+	   正解：`100%`。固定定位元素的百分比是相对**初始包含块**（= 内容区，已排除滚动条），
+	   尺寸与坐标系都刚好对上 clientX/clientY。 */
+	width: 100% !important;
+	height: 100% !important;
+	pointer-events: none;
+	z-index: 99;
+}
+
+/* 整页不许出现滚动条。★ 溢出的源头是 **body 的默认 8px 边距**：
+   实测 `#contents` 与 `#containerOpenPack` 都是 [8, 1921] —— 从 x=8 起步、总宽 1913，
+   于是页面比视口宽出 8px，右侧多出一条横向滚动条（用户报的「宽度已经溢出」）。
+   把边距归零就没了；`overflow: hidden` 只作兜底。 */
+html,
+body {
+	margin: 0 !important;
+	padding: 0 !important;
+	overflow: hidden !important;
+}
+
+/* 上游那三件套"箭头光标"（innercursor / outercursor / arrowcursor）：
+   它们是给 `#svg` 那条箭头配的头部与拖尾，图早在剥离美术时删了，留着只会渲染成
+   几个诡异的红色圆圈（用户截图里左上角那个红圈就是它）。我们的 `#hs-arrow`
+   自带箭头尖，不需要它们。 */
+#innercursor,
+#outercursor,
+#arrowcursor {
+	display: none !important;
+}
+
+/* ================================================================
+ * 扣血标示（那颗金色星星 + 「-1」）归位（用户 2026-10-03）
+ *
+ * 上游把这四个元素钉在 `left: 45.5% / 49.5%`，那是**老布局的屏幕正中** ——
+ * 而双方英雄早就搬到右栏（x 1000 起）了，所以打完玩家，扣血星星还飘在战场中间。
+ * 这里按"哪个容器配哪个英雄"重新钉到右栏对应位置。
+ * ================================================================ */
+/* ⚠ 上游给这两个星星的宽度**不一样**：敌方 9%、我方 **50%**（styles.css:2436 / 2467）。
+   50% 会横跨半个画布，星星整个失控 —— 所以两个一起钉成同样大小（正方形，星星才不变形）。 */
+#computerdamagelabel,
+#playerdamagelabel {
+	width: 108px !important;
+	height: 108px !important;
+}
+
+/* 敌方的两个（星星 + 数字）：位置跟着**敌将框**走（--hs-enemy-*），
+   所以立体视角里把敌将挪到桌子对面时，被打效果自动跟过去 —— 用户 2026-10-02：
+   *「将敌方玩家的命中框连同被打效果移到桌子对面」*。 */
+#computerdamagelabel {
+	left: calc(var(--hs-enemy-x) + var(--hs-enemy-dx, 30px)) !important;
+	top: calc(var(--hs-enemy-y) + var(--hs-enemy-dy, 26px)) !important;
+}
+
+#computerdamagevalue {
+	left: calc(var(--hs-enemy-x) + var(--hs-enemy-vx, 84px)) !important;
+	top: calc(var(--hs-enemy-y) + var(--hs-enemy-vy, 66px)) !important;
+}
+
+#playerdamagelabel {
+	left: calc(var(--hs-right-x) + 30px) !important;
+	top: calc(55% + 24px) !important;        /* 我方英雄：top 55%，高 24% */
+}
+
+#playerdamagevalue {
+	left: calc(var(--hs-right-x) + 84px) !important;
+	top: calc(55% + 64px) !important;
+}
+
+/* 上游的 FPS 与时钟：开发期读数，不属于界面。 */
+#fps,
+#time {
+	display: none !important;
+}
+
+/* 看板娘的对话气泡：纯炉石味台词 */
+#playerbubble,
+#computerbubble {
+	display: none !important;
+}
+
+/* ================================================================
+ * ★★ 两侧黑边的真身：`#leftsideblock` / `#rightsideblock`（用户 2026-10-03）
+ *
+ * 上游在 index.html 顶部放了这两块 div，styles.css:2162 / 2173 给它们：
+ *     width: 12%; height: 100%; background-color: black;
+ *     z-index: 100000000000 / 1000000000000;   ← 十一位数，压过页面上一切
+ *     pointer-events: none;                    ← 所以点击能穿透
+ * 它们本来是用来在宽屏上把画面夹成中间一条的。
+ *
+ * **这才是「法力值看不见」的真正原因**：法力槽在屏幕最左侧（x≈15–84），
+ * 而左侧黑条宽 12%（1913 宽时约 230px）—— 法力槽整个被它盖住了。
+ * 又因为它 `pointer-events: none`，命中测试照样能命中底下的元素，
+ * 所以"元素在、rect 正常、却什么都看不见"，我前面还错怪成了"颜色接近"。
+ *
+ * 既然我们要自己排满整块画布，这两条就不再需要 —— 直接收掉，
+ * 这也是用户说的「取消两侧黑边」。
+ * ================================================================ */
+#leftsideblock,
+#rightsideblock {
+	display: none !important;
+}
+
+/* 开场影片那个 <video> 元素：**必须整个退出布局**。
+   这个元素在 #game 里是居中一大块，而且 `pointer-events: auto` —— 只要它还在渲染，
+   屏幕正中就有一大片点不动的死区，场上的单位拖不过去、也点不到。
+   上游原本是在 playbtn.onclick 里 `cinematicVideo.style.display = "none"` 把它收掉的；
+   我们的 enterFight() 绕过了那个按钮，于是它一直留着 —— 这个死区就是这么来的。
+   既然影片早就剥掉了，这里直接让它永不参与布局与命中测试。 */
+#cinematicVideo {
+	display: none !important;
+	pointer-events: none !important;
+}
+
+/* 开场 / 胜利画面留下的空框，以及主菜单那圈金色描边 */
+#victoryImg1,
+#victoryImg2,
+#hoggerposter,
+#vs,
+#goldborder1,
+#goldborder2,
+#goldborder3,
+#goldborder4,
+#goldborder5,
+#goldborder6,
+#goldborder7,
+#goldborder8,
+#goldborder9,
+#goldborder10,
+#goldborder11,
+#goldborder12,
+#campaign-goldborder {
+	display: none !important;
+}
+
+/* ================================================================
+ * 段 2 · 简洁窗体（★ 我们的落点）
+ *
+ * 将来讨论出来的 UI 配布与动效，整块替换这一节即可 —— 段 1 不用动。
+ * ================================================================ */
+
+/* --- 窗体：一个深色底，别无装饰 --- */
+html,
+body {
+	background: var(--hs-bg) !important;
+	color: var(--hs-text);
+}
+
+#load {
+	background: var(--hs-bg) !important;   /* 载入页别闪白 */
+}
+
+#preventCORS {
+	background: var(--hs-bg) !important;
+	color: var(--hs-dim);
+	font-size: 15px;
+}
+
+/* --- 主菜单：一排朴素按钮 --- */
+#mainmenu {
+	background: var(--hs-bg) !important;
+}
+
+#playbutton,
+#tutorialbutton,
+#howtoplaybutton,
+#maintenancebutton2,
+#campaignbutton {
+	background: var(--hs-panel);
+	color: var(--hs-text);
+	border: 1px solid var(--hs-line);
+	border-radius: 8px;
+	font-size: 14px;
+	letter-spacing: 1px;
+}
+
+#playbutton:hover,
+#tutorialbutton:hover,
+#howtoplaybutton:hover,
+#campaignbutton:hover {
+	background: var(--hs-soft);
+	border-color: var(--hs-accent);
+}
+
+#maintenancebutton2 {
+	opacity: 0.45;
+}
+
+#myGold,
+#myPacks,
+#myGoldBackground,
+#myPacksBackground {
+	color: var(--hs-dim) !important;
+	background: none !important;
+}
+
+/* --- 手牌与场上卡：素面底，信息全靠数值和边框 --- */
+.card-face {
+	background-color: var(--hs-soft);
+	box-shadow: inset 0 0 0 1px var(--hs-line);
+}
+
+.cardinplay {
+	background-color: var(--hs-soft);
+	border-color: var(--hs-line) !important;
+}
+
+/* 卡名那条缎带：上游刷的是 rgb(255,255,198)（炉石卡名的淡黄绶带）。
+   去掉卡图之后它就成了一条横在手牌上的亮黄带，所以底色抹掉、文字改深面板色。 */
+.cardNameValue {
+	background: transparent !important;
+	background-color: transparent !important;
+	color: var(--hs-text);
+	text-shadow: none;
+}
+
+.cardManaValue {
+	color: var(--hs-text);
+}
+
+/* 卡面描述区：上游刷的是 saddlebrown（139,69,19），去掉卡图之后就成了手牌底下那条土黄带子 */
+.cardInfoValue {
+	background: var(--hs-panel) !important;
+	color: var(--hs-dim) !important;
+}
+
+/* 未处理的炉石配色：法力水晶（.manabox）。
+   它的颜色是 playerTurn() / updateManaGUI() 用行内样式在「满 = #3669c9 蓝 / 空 = 黑」之间切的，
+   是**状态指示**不是装饰，所以这里不覆盖（覆盖了会丢掉「还剩几颗」的信息）。
+   它是新增 UI 时要一起重做的一块 —— 见 README §3.5。 */
+
+/* 手牌「出得起 / 出不起」的边框颜色由 JS 写在行内样式上，保留不动 —— 那是功能 */
+
+/* --- 随从的状态角标：没有图了，用描边顶一下，别让状态看不见 --- */
+.taunt {
+	border: 2px dashed var(--hs-accent) !important;
+	border-radius: 8px;
+}
+
+.divineShield {
+	border: 2px solid var(--hs-accent) !important;
+	border-radius: 50%;
+}
+
+.legendaryinplay {
+	border: 2px solid #d8b45a !important;
+	border-radius: 8px;
+}
+
+/* --- 英雄技能：整个功能移除（2026-10-02 用户指令） ---
+   上游给双方各做了一个「英雄技能」按钮（`.playerheropower`，2 费打 1），背景是暴雪那张
+   heropower.gif。用户要求**把这个功能整个拿掉**，不是只换图标。
+
+   做法是「藏起来 + 让它不可交互」，而**不是从 DOM 里删掉元素**。原因很实在：
+   上游有十几处 `document.getElementById("playerheropower").style…` /
+   `.classList.remove("canAttack")`（见 `playerTurn()`、`checkForRequiredMana()`、`attack.js`），
+   元素一旦不存在，那些地方会当场 TypeError，整条回合流程都会断。
+   所以这里保留元素、把它彻底退出交互与视觉：
+     · `display:none` —— 不渲染；
+     · `pointer-events:none !important` —— 上游会把它重新设成 `all`（内联样式），
+       只有 `!important` 压得住；
+     · 假血量 99999999 与技能值一起藏掉。
+   `aim.js` 的取消瞄准也同步认 `#playerheropower` 为「已经不是目标」。 */
+.playerheropower,
+#playerheropower {
+	display: none !important;
+	pointer-events: none !important;
+	visibility: hidden !important;
+}
+
+/* --- 载入层 #load：**必须摘掉**（用户 2026-10-02 报的「攻击敌方玩家没有高亮」的根因）
+   上游 load.js 靠 `document.onreadystatechange`，在 `readyState === 'complete'` 之后把它设成
+   `visibility:hidden; opacity:0`，再用 0.5s 过渡收尾。这条依赖两头都脆：
+     ① 它是**晚注册**的 onreadystatechange —— 挂上去时如果已经错过 complete，就永远不会执行；
+     ② 过渡没跑完的环境（受节流、动画时间轴被冻结的浏览器）里，计算值会停在 visible。
+   而 `#load` 是个**全屏、z-index:1000000、pointer-events:auto 的空 div**：只要它还 visible，
+   `document.elementFromPoint(x, y)` 就**永远返回它** —— 页面里所有命中测试一起落空。
+   它自己没有任何内容，上游的意图也是把它藏掉，所以这里直接按最终状态处理。 */
+#load {
+	display: none !important;
+}
+
+/* --- 英雄区（同时是「玩家本人」这个可攻击目标）：给个看得见的框 --- */
+.playerhero,
+.opponenthero {
+	background: var(--hs-panel) !important;
+	border: 1px solid var(--hs-line);
+	border-radius: 10px;
+}
+
+.playerhero .playerHeroHealth,
+.opponenthero .opposingHeroHealth {
+	color: var(--hs-text);
+	/* 血量数字的位置：上游把它放在 `top: 103%`（媒体查询里）——**掉到英雄框下沿之外**了，
+	   而下面紧挨着就是任务区面板，于是数字被压在框外看不全（用户 2026-10-02：
+	   *「我方玩家的生命值被挡住了，需要上移到我方玩家方框的下边缘正上方」*）。
+	   改成贴框内沿往上收 40px（≈ 数字自身高 2rem + 8px 余量）；两边一起改，位置对称。
+	   用 `!important` 是因为要压过上游媒体查询里的 `top`。 */
+	top: calc(100% - 40px) !important;
+}
+
+/* --- 牌堆：带边框的方块 + 数字 --- */
+.player-deck,
+.computer-deck {
+	background: var(--hs-panel) !important;
+	border: 1px solid var(--hs-line);
+	border-radius: 8px;
+	color: var(--hs-text) !important;
+}
+
+/* --- 「点此开始」 ---
+   上游只靠一张卡包图当外观，图没了会变成一块看不见但能点的区域。
+   按钮里的文字上游会在教程路径里清空（innerText = ""），所以用 ::after 保证它一定看得见。 */
+#confirm {
+	font-size: 0 !important;
+	transform: none !important;
+	background: var(--hs-panel) !important;
+	border: 1px solid var(--hs-accent) !important;
+	border-radius: 10px !important;
+	width: auto !important;
+	min-width: 170px;
+	height: auto !important;
+	padding: 16px 30px !important;
+	box-shadow: none !important;
+	cursor: pointer !important;
+}
+
+#confirm::after {
+	content: "点此开始对战";
+	font-size: 15px;
+	color: var(--hs-text);
+	letter-spacing: 2px;
+}
+
+/* --- 提示条文字 --- */
+#texthint {
+	color: var(--hs-text);
+}
+
+/* ================================================================
+ * 段 3 · 战场与部署位（★ 我们自己排的版面）
+ *
+ * 上游的棋盘位置是照着那张炉石牌桌图写的：`.board--player` 与 `.board--opponent`
+ * 用的是**同一个** `.board` 定位（实测两边 rect 完全重合），靠 JS 事后 `translateY(17.5%)`
+ * 硬挤开一点。背景图一拿掉，这套就散了。
+ *
+ * 所以这里由我们重新排：**每侧 5 个部署位**，横向一字排开，两侧上下对称。
+ * 部署位就是那 5 个虚线方格；角色卡拖进某一格、格子亮起 → 就是「匹配好了」。
+ *
+ * 尺寸全部走变量，改一处就整体缩放：
+ * ================================================================ */
+
+/* 尺寸全部按用户 2026-10-03 的三张标注图定：
+   部署位放大到 150×200（图上就是这么宽），右栏 272 宽，左栏法力 42 宽。 */
+:root {
+	/* ★ 两件事分开定（用户 2026-10-03）：
+	   · **槽宽 150**（用户明确要求恢复成之前的宽度 —— 168 那版卡片太胖）；
+	   · **这一排的宽 888**，由「法力条右缘 + 27」到「右栏左缘 − 27」定，两侧恒 27px。
+	   两者不相等，差出来的 138px 由 `justify-content: space-between` 均分到 4 个间隔里
+	   （间隔≈34.5）。这样**槽宽回到 150、两侧空档仍是 27**，两个要求同时成立。 */
+	--hs-slot-w: 150px;
+	/* 槽高**由宽和高比推**，不再按舞台高度算 —— 用户 2026-10-02：
+	   *「行吧，布局区上的角色槽大概要改成是 251：207 的宽高比」*。
+	   之前高度跟着窗口走，窗口一矮就被压成 150×153 这种将近正方形，形状会漂。
+	   150 × 207/251 ≈ 124（同样的算法写在 interact.js 的 sizeSlots，两处必须一致）。 */
+	--hs-slot-h: 124px;
+	--hs-slot-gap: 12px;
+	--hs-row-w: 888px;
+	--hs-row-gap: 27px;         /* 战场与法力条 / 右栏之间的留白 */
+	/* 右栏收窄到 200（原 272），**画布同步从 1280 缩到 1208** —— 差的就是这 72。
+	   右栏左缘仍是 1000，所以战场（85…973）与右侧 27px 空档**一点没动**，
+	   缩短的部分全部来自右栏本身。 */
+	--hs-right-col: 200px;      /* 右栏宽 */
+	--hs-right-x: 1000px;       /* 右栏左边缘（不动） */
+	/* 敌将框的位置：**平铺视角**下它在右栏（就是现在的样子）。
+	   立体视角会换掉这四个变量（见文件末尾的「视角层」），于是同一个元素
+	   连同它的名字标签、血量数字、被打星星一起搬到桌子对面。 */
+	--hs-enemy-x: var(--hs-right-x);
+	--hs-enemy-y: 14.5%;
+	--hs-enemy-w: var(--hs-right-col);
+	--hs-enemy-h: 26%;
+	--hs-mana-x: 12px;          /* 法力条左边缘 */
+	--hs-mana-w: 46px;          /* 法力条宽 */
+	--hs-stage-w: 1208px;       /* 画布宽 = 右栏左缘 1000 + 右栏 200 + 8 右边距 */
+	--hs-stage-h: 720px;
+}
+
+/* 一排的总宽 888px（不管几格都占满：格数决定的是里面**摆几个槽**，不是这条带子多宽）。
+   5 格时 5×150 + 4×12 = 798 ≤ 888，多出来的宽度进到两侧空档里。 */
+/* 战场**左边缘紧贴法力条**（只留 --hs-row-gap = 27px），右边缘距右栏同样 27px。
+   上一版是"在这段宽度里居中"，两个空档各 127 —— 用户觉得还是散。
+   现在两边就是固定的 27，战场把可用宽度吃满。 */
+/* 一排的总宽仍是 888px（战场左贴法力条、右距右栏各 27px 不变）。
+   格数不再是 5：**关卡决定**（第一关双方各 1 格 → 第五关 5 格；自由关 1/3/5，
+   见 卡库.js 乙段的 HS_SLOTS）。所以改成**居中**（原来是 space-between = 首末贴边）：
+   1 格那关就落在正中间，3 格是紧凑居中一排 —— 而 5 格时与从前的观感几乎一样。
+   卡片定位用的是 cellLeft()（量真实 offsetLeft），所以怎么排都不会落偏。 */
+.hs-row {
+	position: absolute;
+	left: calc(var(--hs-mana-x) + var(--hs-mana-w) + var(--hs-row-gap));
+	width: var(--hs-row-w);
+	display: flex;
+	justify-content: center;
+	gap: var(--hs-slot-gap);
+	z-index: 2;
+	pointer-events: none;    /* 框只是给人看的，不吃鼠标；命中判定由 interact.js 按坐标算 */
+}
+
+/* 纵向分带（视口高的百分比）。四段互不重叠，谁都压不到谁：
+     0–18%   敌方英雄
+    20–36%   敌方 5 个部署位
+    44–60%   我方 5 个部署位
+    64–81%   我方英雄
+    83–100%  手牌
+   之所以要分开，是因为上一版把英雄摆在正中、部署位也摆在正中 ——
+   敌方英雄那张立绘正好盖住敌方第 3 格（截图里那一格是点不到的）。 */
+/* 敌方布局区**贴顶**、我方布局区**贴底**（各自从最近的那一边量），
+   中间那段空档就成了可以伸缩的「对峙区」——
+   窗口更高时这里变宽，而不是在上下加黑边。 */
+#hs-slots-enemy {
+	top: 24px;
+}
+
+#hs-slots-player {
+	bottom: 200px;
+}
+
+.hs-slot {
+	position: relative;
+	width: var(--hs-slot-w);
+	height: var(--hs-slot-h);
+	border: 2px dashed var(--hs-line);
+	border-radius: 10px;
+	box-sizing: border-box;
+	transition: border-color .12s linear, box-shadow .12s linear, background-color .12s linear;
+}
+
+/* 用户 2026-10-03：**槽位上方那条窄虚线框去掉**。
+   它是我给"场地卡挂在某一格上方"预留的挂点，但视觉上把每一格都切成两截，
+   显得很零散。先撤掉；将来真要做场地卡的时候再按当时的交互重新设计。 */
+
+/* 编号：让人知道这是「第几位」 */
+.hs-slot::after {
+	content: attr(data-slot);
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	color: var(--hs-line);
+	font-size: 20px;
+	font-weight: 700;
+}
+
+/* 正在拖着卡的时候：所有空位一起亮出来（告诉玩家「这些地方都能放」） */
+.hs-row.active .hs-slot {
+	border-color: var(--hs-accent);
+	background-color: rgba(127, 178, 229, .06);
+}
+
+/* 指针停在哪一格：那一格高亮 —— 就是「匹配好了」的反馈 */
+.hs-row.active .hs-slot.hot {
+	border-color: var(--hs-ok);
+	border-style: solid;
+	background-color: rgba(111, 191, 115, .16);
+	box-shadow: 0 0 0 3px rgba(111, 191, 115, .28);
+}
+
+/* 已经被占的格子：不再接受拖入 */
+.hs-slot.taken {
+	border-style: solid;
+	opacity: .35;
+}
+
+/* --- 让上游的棋盘对齐到我们这两排 ---
+   `transform: none !important` 是必须的：上游每放一张牌就写一次
+   `board.style.transform = "translateY(17.5%)"`，不对齐就散。 */
+/* ⚠ 棋盘必须和部署位那一排**同高同位**。
+   上一版写的是 `height: auto` —— 棋盘里的卡都是绝对定位，所以棋盘自身高度是 0；
+   我方棋盘又改成贴底（`bottom: 200px`），于是它的「顶」也落在 h-200 那一线，
+   而部署位那一排高 200，顶在 h-400 —— 两者差了整整 200。
+   症状就是用户报的：**拖进虚线框的卡，渲染在框下面一截**。
+   钉成 height:200px 之后，贴底棋盘的顶 = h-200-200 = h-400，与格排对齐。 */
+/* ⚠ 这里原本写的是 `left: var(--hs-battle-x)` —— 而 `--hs-battle-x` **从来没定义过**。
+   引用未定义的变量会让整条声明失效（不是退回 0，是整句被丢掉），于是棋盘回落到上游的定位，
+   落在 x=0，而虚线格排在 x=85 —— **卡整体左偏 85px**，就是用户报的「虚线位置和角色槽对不上」。
+   棋盘必须与格排**同一个左缘**，所以直接复用格排那套算式。 */
+.board {
+	transform: none !important;
+	left: calc(var(--hs-mana-x) + var(--hs-mana-w) + var(--hs-row-gap)) !important;
+	width: var(--hs-row-w) !important;
+	/* ⚠ 上游 `.board` 还有一句 `max-width: 50%` —— 它是**不带 !important 的独立属性**，
+	   所以光写宽度的 `!important` 压不住它（实测棋盘当时只有 640 = 1280 的一半）。 */
+	max-width: none !important;
+	padding: 0 !important;
+	height: var(--hs-slot-h) !important;
+}
+
+.board--opponent {
+	top: 24px !important;
+}
+
+.board--player {
+	top: auto !important;
+	bottom: 200px !important;
+}
+
+/* --- 场上的攻/血徽章：上游用**百分比外边距**定位，卡片比例一改就飞出去 -----------
+   上游 `.attackValueBackground { margin-top: 93%; margin-left: -1% }`、
+   `.healthValueBackground { margin-top: -33%; margin-left: 66% }`。
+   **百分比外边距是按「父元素宽度」解析的**：93% × 150 = 139px。
+   这套在原本 150×200 的竖卡上勉强对得上，但角色槽改成 251:207（150×124）之后，
+   徽章直接被顶到卡外（实测攻徽章落在卡下方 11px、血徽章探出下沿 41px）。
+   这里只换**定位方式**：改成 left/right/bottom 的百分比 —— 左右按宽度解析、上下按高度解析，
+   所以卡片换什么比例，徽章都稳稳贴在卡内下角。形状（圆/菱形 + 渐变 + 线宽）一律不碰。 */
+.board .cardinplay .attackValueBackground,
+.board .cardinplay .healthValueBackground {
+	position: absolute;
+	margin: 0 !important;
+}
+
+.board .cardinplay .attackValueBackground {
+	left: -5%;
+	bottom: -9%;
+}
+
+.board .cardinplay .healthValueBackground {
+	right: -5%;
+	bottom: -9%;
+}
+
+/* 徽章里那个数字（`.attackValue` / `.healthValue`）也是靠 **按卡片尺寸算的百分比** 怼上去的
+   （`bottom: -3.35%; right: 56.8%` / `bottom: 17%; right: -31%`）。徽章位置一改，它就偏出去
+   约 20px。改成 50% + translate(-50%,-50%) 居中 —— 与卡片比例无关。
+   血量那颗原本被反向转了 +45°（父级宝石转了 -45°），得把这个旋转留在 transform 里，
+   否则数字会跟着宝石歪掉。 */
+.board .cardinplay .attackValue,
+.board .cardinplay .healthValue {
+	left: 50% !important;
+	top: 50% !important;
+	right: auto !important;
+	bottom: auto !important;
+	transform: translate(-50%, -50%) !important;
+}
+
+.board .cardinplay .healthValue {
+	transform: translate(-50%, -50%) rotate(45deg) !important;
+}
+
+/* 双方头像在**右栏**。
+   高度改写成**百分比**（相对舞台高度）—— 这样右栏五段在任何窗口高度下都按同一套比例
+   自动让位，永远不会互相压住，也不需要给舞台高度设夹紧区间。
+   右栏五段的纵向配比（合起来 < 100%，留出的空档就是各自的间隔）：
+     设置 1.5–8.5 · 敌将 11–37 · END TURN 41–49 · 我将 53–79 · 任务区 80.5–97.5 */
+.opponenthero {
+	/* 位置走 --hs-enemy-* 四个变量：平铺视角 = 右栏（默认值），立体视角 = 桌子对面（见文末的视角层）。
+	   同一个元素在不同视角下的位置只差这四个变量，其余规则（外观、血量、标签）全部复用。 */
+	left: var(--hs-enemy-x) !important;
+	top: var(--hs-enemy-y) !important;
+	width: var(--hs-enemy-w) !important;
+	height: var(--hs-enemy-h) !important;
+	/* 外层只负责定位；外观交给内层（见下）—— 否则会盖住内层的椭圆 */
+	background: none !important;
+	border: 0 !important;
+}
+
+.playerhero {
+	left: var(--hs-right-x) !important;
+	top: 55% !important;
+	bottom: auto !important;
+	width: var(--hs-right-col) !important;
+	height: 24% !important;
+	background: none !important;
+	border: 0 !important;
+}
+
+/* ★ 去掉头像区的**椭圆**（用户 2026-10-03）。
+   上游的结构是「外层 .opponenthero / .playerhero 里套一个内层 .cardinplay」：
+       <div class="opponenthero"><div class="cardinplay" id="opposinghero">…</div></div>
+   而我一直在给**外层**写圆角 —— 内层带着 `.cardinplay` 的 `border-radius:100%`，
+   于是里面那个椭圆原封不动地留着。圆角必须压在内层上。 */
+#opposinghero,
+#playerhero {
+	position: relative !important;
+	width: 100% !important;
+	height: 100% !important;
+	box-sizing: border-box;
+	border-radius: 12px !important;          /* ← 这一句才是"去椭圆" */
+	background: var(--hs-panel) !important;
+	border: 2px solid var(--hs-line) !important;
+}
+
+/* 场上的角色卡：绝对定位进各自的格子。
+   ⚠ 位置**不在这里用 nth-child 算** —— 那是上一版的做法，它把「第 n 张」当成「第 n 格」，
+   于是「拖到第 3 格、却落在第 1 格」这种错位就必然发生（用户报的第二个问题）。
+   现在由 interact.js 维护一份**格子表**，把 left 直接写成行内样式 —— 拖到哪一格就落在哪一格。 */
+.board .cardinplay {
+	position: absolute !important;
+	float: none !important;
+	margin: 0 !important;
+	width: var(--hs-slot-w) !important;
+	height: var(--hs-slot-h) !important;
+	/* ⚠ 上游 `.cardinplay` 有 `border: solid 5px #735c4c`，而 box-sizing 默认是 content-box
+	   —— 边框会**加到宽度外面**，于是 150×170 的格子放上去变成 160×180，整张卡偏大一圈、
+	   与虚线格对不齐。钉成 border-box：边框算在 150×170 里面。 */
+	box-sizing: border-box !important;
+	border-radius: 10px !important;
+	top: 0 !important;
+}
+
+/* ================================================================
+ * 舞台：固定 1280×720，整体等比缩放
+ *
+ * 用户要的是「整个游戏界面做进一个窗体，随浏览器窗口保持固定比例缩放」。
+ * 做法就是把 `#game` 钉成 1280×720 的**设计画布**，再对它整体 `transform: scale(k)`
+ * （k 由 interact.js 按窗口算，取 `min(w/1280, h/720)`），居中摆放。
+ *
+ * 好处是：**里面所有坐标都变成设计坐标**，元素之间的大小与位置关系被整体缩放锁死 ——
+ * 不管窗口多大、是不是竖屏，5 个格子相对战场的位置永远一样。
+ * 代价是窗口比例与 16:9 不一致时两边会留边（letterbox），这是刻意的。
+ * ================================================================ */
+#game {
+	position: fixed !important;
+	left: 50% !important;
+	top: 50% !important;
+	width: var(--hs-stage-w) !important;
+	/* 高度**自适应**：interact.js 的 fitStage() 按窗口宽高比算出这一刻该多高，
+	   再回填成 --hs-stage-h。见下面 fitStage 的说明 —— 这样两边的留边就没有了。 */
+	height: var(--hs-stage-h, 720px) !important;
+	margin: 0 !important;
+	/* ⚠ 这三条是必须的：上游 `#game` 写的是 `width:90%` + **`padding-left:9%`**，
+	   而默认 `box-sizing: content-box` 会把 padding 加到宽度外面 ——
+	   实测舞台因此变成 1395 宽（1280 + 1280×9%），整体右移 58px，所有设计坐标全跟着歪。
+	   钉成 border-box 并把 padding 归零，1280×720 才是真的 1280×720。 */
+	box-sizing: border-box !important;
+	padding: 0 !important;
+	border: 0 !important;
+	overflow: hidden;
+	transform-origin: center center;
+	/* transform 由 interact.js 写（scale 值随窗口变） */
+}
+
+/* --- 结束回合：右栏正中间，双方头像夹着它 --- */
+/* 结束回合要**恰好落在两个头像之间那条空档的正中**。
+   上一版用的是 `top: 50%` —— 那是整块画布的中线，不是两个头像的中线；
+   画布越矮，它就越是往下沉（用户 2026-10-03 报的「位置偏下」，在 1023 高的窗口里会压到我方头像）。
+   两个头像分别在 top 84（高 180，到 264）与 bottom 176（高 180，从 h−356 起），
+   空档是 [264, h−356]，中点 = h/2 − 46 —— 所以这里写 calc(50% - 46px)。 */
+#endturn {
+	left: var(--hs-right-x) !important;
+	top: 43.5% !important;
+	transform: none !important;
+	width: var(--hs-right-col) !important;
+	height: 8.5% !important;
+	border-radius: 12px !important;
+}
+
+/* --- 右栏的「设置」「视角」与预留的「任务区」（图 1 顶部与底部那几个框） ---
+   ⚠ 新加的元素一定要加进这个选择器组：这里面才有 `position: absolute` 与整套外观。
+     漏了就会掉到 (0,0) 去 —— `#hs-view` 第一版就是这么飞到左上角的。 */
+#hs-settings,
+#hs-view,
+#hs-quest {
+	position: absolute;
+	left: var(--hs-right-x);
+	width: var(--hs-right-col);
+	box-sizing: border-box;
+	border: 2px solid var(--hs-line);
+	border-radius: 12px;
+	background: var(--hs-panel);
+	color: var(--hs-text);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 6;
+}
+
+#hs-settings,
+#hs-view {
+	top: 1%;
+	height: 6.5%;
+	width: calc((var(--hs-right-col) - 8px) / 2);
+	font-size: 17px;
+	letter-spacing: 3px;
+	cursor: pointer;
+}
+
+#hs-view {
+	left: calc(var(--hs-right-x) + (var(--hs-right-col) + 8px) / 2) !important;
+}
+
+#hs-settings:hover,
+#hs-view:hover {
+	border-color: var(--hs-accent);
+	background: var(--hs-soft);
+}
+
+#hs-quest {
+	top: 83%;
+	bottom: auto;
+	height: 14.5%;
+	flex-direction: column;
+	gap: 8px;
+	color: var(--hs-dim);
+}
+
+#hs-quest .hq-label {
+	font-size: 16px;
+	letter-spacing: 4px;
+}
+
+#hs-quest .hq-note {
+	font-size: 12px;
+	opacity: .7;
+}
+
+/* 任务清单（下一轮"任务驱动法力上限"的落点，现在多半显示"还没接上"） */
+#hs-quest .hq-tasks {
+	font-size: 12px;
+	line-height: 1.5;
+	overflow: auto;
+}
+
+#hs-quest .hq-task::before { content: '· '; }
+
+#hs-quest .hq-task.bad { color: #ff9f9f; }
+
+/* 设置抽屉里的「导出本局信息」（排查报错用）。
+   ⚠ 2026-10-04 用户报"导出报错无法点击"：上游那个抽屉（`#gamemenuContent`）里的按钮是
+   **绝对定位**的，我们把按钮 append 进去之后**正好压在 Concede 底下**（`elementFromPoint`
+   命中 `concedebutton`）—— 看得见、点不到。修法：自家按钮自己抬一层
+   （`position: relative` + 比抽屉内层更高的 z-index），并且给足高度好点。 */
+#hs-report-btn {
+	position: relative;
+	z-index: 41;
+	display: block;
+	margin: 10px auto 4px;
+	padding: 8px 14px;
+	min-height: 34px;
+	font: inherit;
+	font-size: 13px;
+	letter-spacing: 1px;
+	color: var(--hs-text);
+	background: var(--hs-soft);
+	border: 1px solid var(--hs-line);
+	border-radius: 8px;
+	cursor: pointer;
+}
+
+#hs-report-btn:hover {
+	border-color: var(--hs-accent);
+}
+
+/* ================================================================
+ * 本局信息导出面板
+ *
+ * 用**可选中的文本框**而不是剪贴板：成品可能要跑在 iframe / MMD 沙盒里，
+ * 那里 `execCommand('copy')` 不一定被允许 —— 文本框永远能手动全选。
+ * ================================================================ */
+#hs-report {
+	position: fixed;
+	inset: 0;
+	z-index: 9999;
+	display: none;
+	box-sizing: border-box;
+	padding: 4vh 4vw;
+	background: rgba(6, 9, 14, .92);
+}
+
+#hs-report.on {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+#hs-report .hr-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	color: var(--hs-text);
+	font-size: 16px;
+	letter-spacing: 1px;
+}
+
+#hs-report .hr-head span {
+	margin-right: auto;
+}
+
+#hs-report .hr-head button {
+	padding: 6px 14px;
+	font: inherit;
+	font-size: 14px;
+	color: var(--hs-text);
+	background: var(--hs-soft);
+	border: 1px solid var(--hs-line);
+	border-radius: 8px;
+	cursor: pointer;
+}
+
+#hs-report .hr-head button:hover {
+	border-color: var(--hs-accent);
+}
+
+#hs-report textarea {
+	flex: 1;
+	width: 100%;
+	box-sizing: border-box;
+	padding: 14px;
+	color: #cfe0f5;
+	background: #0d121b;
+	border: 1px solid var(--hs-line);
+	border-radius: 10px;
+	font: 12px/1.6 ui-monospace, Consolas, monospace;
+	resize: none;
+	user-select: text !important;
+	-webkit-user-select: text !important;
+}
+
+/* --- 英雄区的标题：把上游那两个 name 标签挪进框里当标题 ---
+   ⚠ 敌我**必须分开写**：立体视角下敌将搬到桌子对面（--hs-enemy-*），
+     而我将仍在右栏。第一版把两者写在一条规则里、只让 `top` 跟着变量走，
+     结果立体视角下敌方的名字留在右栏 —— 正好压在「设置 / 立体视角」两颗按钮上
+     （用户 2026-10-02 的截图）。 */
+#playerlabel {
+	left: calc(var(--hs-right-x) + 14px) !important;
+	width: calc(var(--hs-right-col) - 28px) !important;
+}
+
+#opponentlabel {
+	left: calc(var(--hs-enemy-x) + 14px) !important;
+	width: calc(var(--hs-enemy-w) - 28px) !important;
+}
+
+#opponentlabel,
+#playerlabel {
+	text-align: center;
+	color: var(--hs-dim);
+	font-size: 15px;
+	letter-spacing: 2px;
+	opacity: 1 !important;
+	visibility: visible !important;
+	z-index: 7;
+}
+
+#opponentlabel { top: calc(var(--hs-enemy-y) + 1.5%) !important; }
+#playerlabel   { top: 56% !important; bottom: auto !important; }   /* 各自贴在自己那个头像框的上沿 */
+
+/* --- 牌库：整个移除（用户 2026-10-02）
+   理由：剩余数量不是重点，而且这套规则里没有「卡组耗尽的疲劳」——
+   牌打完就把墓地重新洗回去（见 interact.js 的 refillIfEmpty）。
+   所以抽牌堆的计数框、以及对手那排装饰性的手牌背面，都收掉，把空间让给战场。 */
+#playerDeck,
+#computerDeck,
+.player-deck,
+.computer-deck,
+.enemycards {
+	display: none !important;
+}
+
+/* --- 法力水晶：屏幕左侧一条竖列（用户 2026-10-02）
+   上游是横着一排，现在改成竖向。颜色仍由上游的 updateManaGUI() 逐颗写内联样式决定
+   （满 = 蓝，已花 = 黑），这里只负责排布。 */
+/* 法力竖管（图 1 左侧那根）：一条竖长的槽，水晶从**底部**往上堆。
+   上游给的是 `width:17.6% / height:3.4%`（横排底槽）+ 边框底色，全部放掉。 */
+/* ================================================================
+ * 法力槽
+ *
+ * ★ 这里要说清一件事：**看不见不是"颜色接近"，是我把上游可见的容器拆掉了。**
+ *   上游 #manacontainer（styles.css:1220）原本刷的是
+ *       底色 #234856（青）与 4px 描边 #476e7a（亮青）——
+ *   所以横排时一眼就能看见那个槽。
+ *   我把它改成竖向时，为了清掉"横排那条底槽的固定宽高"，**连同底色和描边一起拆了**，
+ *   只靠自己加的一层近乎窗体色的底 —— 于是元素还在（rect 正常、中心命中就是它自己），
+ *   但肉眼没了。现在把上游那套可见的青色底与亮描边**恢复回来**，只改成竖排。
+ *
+ * ⚠⚠ 血泪教训：上面这段注释最初把那两个属性连同"青色底 / 亮青描边"的说明一起写在
+ *   注释里的（即：在注释内部又开了一层注释）—— **CSS 注释不能嵌套**！
+ *   内层那个注释结束符会**提前把注释关掉**，后面整段变成乱码，
+ *   连下面这条 #manacontainer 规则的**选择器都被污染**，整条规则静默失效。
+ *   症状极像"样式写对了却没生效"，实际是注释把规则吃掉了。
+ *   所以：**注释里永远不要再出现注释的起止标记**（本文件其余地方同样遵守）。
+ *   组装.py 里有一道静态检查专门盯这个，构建时会直接报错。
+ * ================================================================ */
+#manacontainer {
+	position: absolute;
+	left: var(--hs-mana-x);
+	/* 纵向位置由 fitStage() 算好回填（--hs-mana-top / --hs-mana-h）：
+	   用户 2026-10-03：*「把法力值区域抬高，下方和战场下方对齐」* ——
+	   也就是法力槽的**底边**与「我方部署位那一排的底边」对齐，不再垂到战场下面去。 */
+	top: var(--hs-mana-top, 29%);
+	width: var(--hs-mana-w) !important;
+	height: var(--hs-mana-h, 52%) !important;
+	box-sizing: border-box;
+	display: flex !important;
+	flex-direction: column-reverse;   /* 第一颗在最底下，往上一颗颗叠 */
+	justify-content: flex-start;
+	align-items: center;
+	gap: 0;
+	padding: 6px 0;
+	background: #234856 !important;   /* ← 上游的青色底，恢复 */
+	border: 3px solid #6fa8bd !important;   /* ← 上游 4px 亮青描边，稍加亮以适应深色窗 */
+	border-radius: 10px;
+	z-index: 5;
+}
+
+/* 法力数值（图 1 里那个 4/4 的小框） */
+/* 法力数值：和法力槽同一套可见色，明明白白摆在槽的上方 */
+#mana {
+	position: absolute !important;
+	left: calc(var(--hs-mana-x) - 4px) !important;
+	top: auto !important;
+	/* 紧贴在法力槽上端之上（槽顶由 --hs-mana-top 给） */
+	bottom: calc(100% - var(--hs-mana-top, 29%) + 10px) !important;
+	width: calc(var(--hs-mana-w) + 8px) !important;
+	height: 6% !important;
+	min-height: 38px;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: #234856;
+	border: 3px solid #6fa8bd;
+	border-radius: 8px;
+	color: #eaf6fa !important;
+	font-size: 17px !important;
+	font-weight: 700;
+	text-align: center;
+	z-index: 5;
+}
+
+/* 法力水晶：上游用**行内样式**在「满 = #3669c9 蓝 / 已花 = black」之间切。
+   蓝的看得见，黑的在深色底上等于消失 —— 所以给一圈亮描边：
+   已花掉的水晶就变成一个空环，仍然数得出来还剩几颗。 */
+/* 菱形水晶（图 1 那串菱形）：旋转 45° 的方块。
+   底色仍由上游 updateManaGUI() 逐颗写内联样式（满 = 蓝 / 已花 = 黑），
+   所以这里留一圈亮描边 —— 花掉的水晶变成一个空心菱形，仍然数得出来还剩几颗。 */
+.manabox {
+	width: 18px;
+	height: 18px;
+	border-radius: 3px;
+	border: 2px solid #6d8fc0;
+	background: #1b2433;
+	box-sizing: border-box;
+	transform: rotate(45deg);
+	margin: 5px 0;
+}
+
+/* --- 手牌：贴舞台底部、水平居中一行 --- */
+#cards {
+	position: absolute;
+	left: 0;
+	width: 965px;          /* 手牌区不铺到右栏底下（图 1：手牌区与任务区各占一块） */
+	bottom: 0;
+	/* 手牌条跟着舞台高度走（图里约 15%），但**不低于卡牌本身的高度**，
+	   否则矮屏上卡片会顶出手牌条、压到战场上。 */
+	height: max(168px, 19%);
+	display: flex;
+	justify-content: center;
+	align-items: flex-end;
+	/* 间隙**不写在这里**：手牌最多 10 张，排不下时要按张数压缩步距，
+	   固定 gap 做不到这件事（见 界面.js 的 排手牌 —— 它用行内 margin 算步距）。 */
+	gap: 0;
+	z-index: 9;
+	/* 上游 `.cards` 有 `margin:-50px` + `padding:0 50px`（为了横向溢出留白），
+	   在这里会把宽度撑出去 —— 舞台内要干净，全部归零。 */
+	margin: 0 !important;
+	padding: 0 !important;
+}
+
+/* 手牌保持流内布局：**不再让卡片跟着指针跑**（见 interact.js 的说明）。
+   拖动时的内容由预览面板承担，卡片本体留在手牌里不动。 */
+#cards .card {
+	position: relative !important;
+	float: none !important;
+	width: 100px;
+	height: 154px;
+	flex: 0 0 auto;
+}
+
+/* ================================================================
+ * 拖手牌时的**渐变蒙版**（用户 2026-10-03 的设计）
+ *
+ * 意图：手牌拖出来时，把**没在指的那半张战场**用一层半透明黑压暗，
+ * 于是「正在指的那半边」自然凸显出来；同时预览面板也放到压暗的那半边，
+ * 既不挡箭头，也不挡你要看的地方。
+ *
+ * 两个方向由 interact.js 按指针落在哪半张战场切换：
+ *   指针在我方布局区 → 蒙版盖**上半**（敌方区），从上往下渐隐
+ *   指针在敌方布局区 → 蒙版盖**下半**（我方区），从下往上渐隐
+ *
+ * `pointer-events: none` 是关键：蒙版**只压暗、不吃鼠标**，
+ * 所以底下该点得到的照旧点得到 —— 这就是「不能阻挡显示」那一条。
+ * ================================================================ */
+#hs-mask {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	pointer-events: none;
+	z-index: 20;              /* 在棋盘之上、预览(200)与箭头(150)之下 */
+	display: none;
+}
+
+#hs-mask.on {
+	display: block;
+}
+
+/* ================================================================
+ * 禁用浏览器的原生拖拽与框选
+ *
+ * 用户报的第一个问题：拖卡片的时候会把「图片素材」整页拖走。
+ * 那是 HTML5 的原生 drag —— 元素带背景图/是 <img> 时，按住就会触发 dragstart，
+ * 浏览器拖出一个半透明的幽灵图，看起来就像整页在飘。
+ * 三段一起上才干净：
+ *   ① `-webkit-user-drag: none` 关掉元素被拖
+ *   ② `user-select: none` 关掉拖拽时把那串数值（"2 / 1"）框选成蓝色高亮
+ *   ③ 再在 JS 里拦一次 dragstart（老内核只认事件）
+ * ================================================================ */
+#game,
+#game * {
+	-webkit-user-drag: none;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+#game img,
+#game .card,
+#game .cardinplay,
+#game .card-face {
+	-webkit-user-drag: none;
+}
+
+/* 拖动中的手牌：**留在手牌里原地不动**，不再跟着指针跑 ——
+   卡片太大会挡死场地（用户前一轮就报过），而且上游那套「把卡片挪到指针下」用的是
+   视口坐标，一旦舞台整体缩放就会错位。所以直接把跟随取消：拖动期间只压暗表示「被拿起」，
+   内容交给预览面板。 */
+.card.dragging {
+	opacity: .35 !important;
+}
+
+/* --- 拖手牌时的箭头层 ---
+   挂在 `#game` 里，所以坐标是**设计坐标**（1280×720），跟着舞台一起缩放。
+   和上游那个 `#svg`（玩家单位攻击用）**分开**：两者各有自己的 mousemove 监听，
+   共用一条 path 会互相覆盖。这也是将来演出管线要用的同一条箭头层。 */
+#hs-arrow {
+	/* ★ 现在是**视口坐标系**（挂在 body 上、和上游的 #svg 同一套），不再是设计坐标：
+	   立体视角下战场被 rotateX，设计坐标到屏幕不再是线性映射，画在设计坐标里的箭头会指不到指针底下。
+	   顺带一个好处：z-index 150 已经高过 #game 的整个子树，不必再和上游那颗 50 的按钮抢层叠。
+	   线宽与箭头大小由 interact.js 按舞台缩放乘 k（drawArrow），所以窗口变大不会变成一根头发。 */
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 150;
+	display: none;
+}
+
+#hs-arrow.on {
+	display: block;
+}
+
+/* --- 拖手牌时的卡面预览 ---
+   放在箭头所在**另一侧**（箭头在左就放右，反之同理），这样它不会压住箭头，
+   也不会压住要看的那半边场地。 */
+/* --- 卡面预览：左右两侧各一个**固定位置**，按箭头在哪一侧挑对面那个 ---
+   （用户 2026-10-02：*「在屏幕的左右两侧设置一个固定的预览位置，当鼠标移动到左侧时，
+   把预览内容设为在右侧展示」*）
+   上一版是跟着指针飘、又只有 208px 宽，用户反馈「有点小、看不清楚」—— 这里放大到 340px，
+   字号整体提一档，并把信息分层：名字 / 费用 / 攻血 / 效果文案。 */
+/* 尺寸按用户图 2 / 图 3：**9:16 的卡图比例**（248×440），位置固定。
+   纵向中心落在 286px —— 与两张标注图里那个棕框（y 66…506）一致。 */
+#hs-preview {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 248px;
+	height: 440px;
+	box-sizing: border-box;
+	padding: 18px 20px;
+	background: #182031;
+	border: 2px solid var(--hs-accent);
+	border-radius: 14px;
+	color: var(--hs-text);
+	font-size: 16px;
+	line-height: 1.7;
+	pointer-events: none;
+	/* ★ 必须高于右栏那颗「结束回合」按钮：上游 index.js:191 / elementsController.js:545
+	   会把 `#endturn` 的行内 z-index 抬到 50 和 21。预览排在右侧时正好和右栏重叠，
+	   31 挡不住 50，于是按钮**画在预览上面**（用户 2026-10-02 图 2）。 */
+	z-index: 200;
+	display: none;
+	box-shadow: 0 14px 40px rgba(0, 0, 0, .6);
+	overflow: hidden;
+}
+
+#hs-preview.on {
+	display: block;
+}
+
+/* 左侧那一格往右挪开法力竖列，免得两者叠在一起（图 3：棕框在 x 90…355） */
+#hs-preview.side-left {
+	left: 96px;
+}
+
+#hs-preview.side-right {
+	right: 22px;
+}
+
+/* 「略微下移 / 上移」：指针在敌方区（上）时预览下移，在我方区（下）时上移 ——
+   于是预览总是往**没在指**的那半边靠，不跟箭头抢地方。 */
+#hs-preview.shift-down {
+	transform: translateY(calc(-50% + 64px));
+}
+
+#hs-preview.shift-up {
+	transform: translateY(calc(-50% - 64px));
+}
+
+#hs-preview .hp-name {
+	font-size: 19px;
+	font-weight: 700;
+	margin-bottom: 10px;
+	line-height: 1.35;
+	/* 卡名有长有短（"Saronite Chain Gang"），不换行就会被 overflow:hidden 切掉半截 */
+	word-break: break-word;
+	overflow-wrap: anywhere;
+}
+
+#hs-preview .hp-cost {
+	color: var(--hs-accent);
+	font-size: 18px;
+}
+
+#hs-preview .hp-stats {
+	display: flex;
+	gap: 22px;
+	margin: 10px 0 12px;
+	font-size: 19px;
+	font-weight: 700;
+}
+
+#hs-preview .hp-atk {
+	color: #f0c060;
+}
+
+#hs-preview .hp-hp {
+	color: var(--hs-danger);
+}
+
+#hs-preview .hp-text {
+	color: #b9c6d8;
+	font-size: 14px;
+	line-height: 1.6;
+	border-top: 1px solid var(--hs-line);
+	padding-top: 10px;
+	word-break: break-word;
+	overflow-wrap: anywhere;
+}
+
+/* 目标高光：拖箭头悬停到合法目标上时给人的反馈 */
+.hs-target-hover {
+	box-shadow: 0 0 0 4px var(--hs-ok), 0 0 18px 4px rgba(111, 191, 115, .5) !important;
+}
+
+/* 非法目标：压暗 + 一条理由 */
+.hs-target-bad {
+	outline: 2px dashed var(--hs-danger);
+	outline-offset: 2px;
+}
+
+/* ================================================================
+ * 视角层：平铺 / 斜向立体（用户 2026-10-02）
+ *
+ * 用户给了一个 three.js 的参考文件（两个按钮：「参考视角」「垂直俯瞰」），要战场也做成
+ * 两个视角：一个保留现在的**平铺**，一个是**斜向的立体视角**，并且把敌方的命中框连同
+ * 被打效果一起挪到桌子对面。
+ *
+ * ★ 为什么**没有**引入 three.js / WebGL：
+ *   1. 这个页面必须能离线跑、并且将来要压进 MMD 卡（每条正则 ≤ 18000 UTF-16）。
+ *      three.js 压缩后约 650 KB，光是它就要多出三十多条规则 —— 而我们整个游戏现在才
+ *      十几条。为了一个视角把可打包性搭进去，不划算。
+ *   2. 战场本来就是 DOM：卡是 DOM、命中用矩形、拖放走 elementFromPoint。
+ *      换成 WebGL 等于把渲染、拾取、动画、拖放全部重写一遍，而这套东西刚稳定下来。
+ *   3. 这个透视用 CSS 3D 就能做：`perspective` + `rotateX` 之后浏览器**仍然是**
+ *      按真实投影做命中测试的（实测槽与卡的矩形不重叠，直角坐标判定照旧成立）。
+ *   所以：视角 == 一组 CSS 变换与位置变量，切换只是一个类名。
+ *
+ * 图层划分（关键）：
+ *   倾斜的只有「战场」—— 两块棋盘 + 两排部署位，它们被搬进 #hs-table。
+ *   手牌 / 法力条 / 右栏 / 预览 / 箭头 / 蒙版 全部留在**屏幕坐标系**里不参与倾斜，
+ *   这正是参考图里的样子（桌面往后倒，UI 还是正对的）。
+ * 3D 里元素之间的遮挡关系由 transform-style: preserve-3d 决定 —— 立牌能在平放的卡上
+ * 「站」起来，靠的就是父层 preserve-3d + 子层反向 rotateX 抵消桌面的倾角。
+ * ================================================================ */
+
+/* 透视挂在整个画布上：所有子元素共用一个灭点，看起来才像同一张桌子 */
+#game {
+	perspective: 1100px;
+}
+
+#hs-table {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	transform-origin: 50% 100%;     /* 以桌面近边为轴往后倒 */
+	transform-style: preserve-3d;
+	transition: transform .55s cubic-bezier(.22, .61, .36, 1),
+	            top .55s cubic-bezier(.22, .61, .36, 1),
+	            bottom .55s cubic-bezier(.22, .61, .36, 1);
+}
+
+/* 桌面本身：**纯色桌布**（用户 2026-10-02：*「桌上的方格纹理就别加了，只保留纯色桌布」*）。
+   之前那版铺的是橙色网格（参考图里有），用户不要，所以这里只剩渐变的底色。
+   平铺视角下 opacity 0（保持简洁窗体不变），立体视角才显现 —— 用户要的是"两个视角"，
+   不是把平铺那个也改掉。 */
+#hs-table::before {
+	content: '';
+	position: absolute;
+	left: -2%;
+	top: -14%;
+	width: 104%;
+	height: 122%;
+	border-radius: 26px;
+	/* 桌布：近处略深、远处略亮，给倾斜的桌面一点体积感（不再是纯平的一块色） */
+	background: linear-gradient(0deg, var(--hs-table-near, #2c0816) 0%, var(--hs-table-far, #3d0f1f) 100%);
+	transform: translateZ(-2px);
+	opacity: 0;
+	transition: opacity .45s linear;
+	pointer-events: none;
+}
+
+/* ---- 立体视角 ---- */
+
+#game.view-tilt #hs-table {
+	/* 往上提一截：倾斜会把近边压到画布下方，不提就会和手牌叠上
+	   （实测 54° 时近排底边落在 402，正好顶到手牌区上沿；提到 70px 之后余量 34px） */
+	top: calc(-1 * var(--hs-tilt-lift, 70px));
+	bottom: var(--hs-tilt-lift, 70px);
+	transform: rotateX(var(--hs-tilt-rx, 54deg));
+}
+
+#game.view-tilt #hs-table::before {
+	opacity: 1;
+}
+
+/* 立体视角下的敌将：搬到**桌子对面**（画布顶部居中），框也放大 —— 它在透视里离得远，
+   放大后视觉大小才和右栏那版相当。 */
+#game.view-tilt {
+	--hs-enemy-x: 444px;
+	--hs-enemy-y: 1.5%;
+	--hs-enemy-w: 320px;
+	--hs-enemy-h: 24%;
+	/* 被打的星星/数字原来是按"右栏里 200 宽的框"摆的，框换成 320 宽之后要重新对位 */
+	--hs-enemy-dx: 90px;
+	--hs-enemy-dy: 40px;
+	--hs-enemy-vx: 150px;
+	--hs-enemy-vy: 84px;
+}
+
+/* 场上的角色卡在立体视角里变成"桌上一块板 + 板上立着一张小牌"（参考图的样子）。
+   板 = 卡片自己的盒子（平放在桌面上）；立牌 = ::after，反向旋转抵消桌面倾角。 */
+#game.view-tilt .board .cardinplay {
+	transform-style: preserve-3d;
+	background: var(--hs-plate-enemy, rgba(228, 116, 26, .78)) !important;
+	border: 3px solid var(--hs-plate-line, rgba(255, 200, 120, .75)) !important;
+	box-shadow: 0 10px 22px rgba(0, 0, 0, .45);
+}
+
+#game.view-tilt .board--player .cardinplay {
+	background: var(--hs-plate-player, rgba(224, 178, 30, .78)) !important;
+}
+
+#game.view-tilt .board .cardinplay::after {
+	content: '';
+	position: absolute;
+	left: 25%;
+	top: -50%;
+	width: 50%;
+	height: 50%;
+	background: var(--hs-stand, #0e6d6d);
+	border: 2px solid rgba(255, 255, 255, .55);
+	border-radius: 5px;
+	box-shadow: 0 8px 16px rgba(0, 0, 0, .35);
+	/* 抵消桌面倾角 → 立起来正对镜头（-1 × 桌面角度） */
+	transform: rotateX(calc(-1 * var(--hs-tilt-rx, 54deg)));
+	transform-origin: 50% 100%;
+}
+
+/* 立体视角下那两排虚线槽也压低不透明度：它们只是落点提示，桌面上网格才是主体 */
+#game.view-tilt .hs-slot {
+	opacity: .5;
+}
+
+#game.view-tilt .hs-slot.hot {
+	opacity: 1;
+}
+
+/* ================================================================
+ * 演出层（`pipeline.js` 的画布）
+ *
+ * 和拖拽箭头一样挂在 `body` 上、**视口坐标系** —— 立体视角下战场是斜的，
+ * 任何"从 A 画到 B"的东西都不能活在设计坐标里。
+ *
+ * z-index 160：在拖拽箭头(150)之上，在菜单/结算遮罩(9998)之下。
+ * `pointer-events: none` 是硬要求 —— 演出只负责好看，绝不能吃掉一次点击。
+ * ================================================================ */
+#hs-fx {
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 160;
+	overflow: hidden;
+}
+
+#hs-fx svg.hs-fx-arrow {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	pointer-events: none;
+}
+
+/* 飘数字：伤害/治疗/增益/减益四种颜色，字号由 pipeline.js 按舞台缩放乘 k */
+.hs-fx-pop {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	font-weight: 700;
+	line-height: 1;
+	color: #fff;
+	text-shadow: 0 2px 6px rgba(0, 0, 0, .65), 0 0 2px rgba(0, 0, 0, .9);
+	white-space: nowrap;
+}
+
+.hs-fx-pop.damage { color: #ff6a5a; }
+.hs-fx-pop.heal   { color: #6fbf73; }
+.hs-fx-pop.buff   { color: #f0c060; }
+.hs-fx-pop.debuff { color: #c58bd8; }
+
+/* 运卡：一张卡片从 A 飞到 B（抽牌 / 上场用） */
+.hs-fx-card {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	box-sizing: border-box;
+	border: 2px solid var(--hs-line);
+	border-radius: 10px;
+	background: var(--hs-panel);
+	box-shadow: 0 10px 24px rgba(0, 0, 0, .5);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 8px;
+}
+
+.hs-fx-card-name {
+	color: var(--hs-text);
+	font-size: 13px;
+	line-height: 1.4;
+	text-align: center;
+	word-break: break-word;
+}
+
+/* 演出期间：整块界面都不该看起来还能点（锁的视觉面） */
+body.hs-locked #cards .card,
+body.hs-locked .cardinplay,
+body.hs-locked #endturn {
+	cursor: default;
+}
+
+/* 退场克隆体：保留原卡片的所有类（攻血、立牌照旧），只额外获得"绝对定位 + 不吃鼠标"。
+   它被放回**原件所在的容器**，所以立体视角下和桌面一起倾斜 —— 位置不用换算。 */
+.hs-fx-ghost {
+	position: absolute !important;
+	top: 0 !important;
+	pointer-events: none !important;
+	z-index: 3;
+}
+
+/* ================================================================
+ * 关键词 / 状态的**纯色角标**（C4/C5）
+ *
+ * 上游只加类名（`hasTaunt` / `hasDivineShield`），角标是随美术一起剥掉的图片 ——
+ * 所以这里用**类名 + 纯色**把它们画出来。冻结/沉默上游没有类名（要等效果表），先留位。
+ * ================================================================ */
+.board .cardinplay.hasTaunt::before {
+	content: '嘲';
+	position: absolute;
+	left: 50%;
+	top: -12%;
+	transform: translateX(-50%);
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: #6b5a3a;
+	border: 2px solid #d9c07a;
+	color: #ffe9b0;
+	font-size: 12px;
+	line-height: 20px;
+	text-align: center;
+	pointer-events: none;
+}
+
+.board .cardinplay.hasDivineShield {
+	box-shadow: 0 0 0 3px #f0d060, 0 0 14px 2px rgba(240, 208, 96, .55) !important;
+}
+
+.board .cardinplay.hasDivineShield::after {
+	border-color: #f0d060 !important;
+}
+
+/* 英雄受击 / 治疗的闪动（由 interact.js 的 hero 血量旁听触发） */
+.hs-hero-hit {
+	animation: hs-hero-hit .5s ease;
+}
+
+@keyframes hs-hero-hit {
+	0%, 100% { box-shadow: none; }
+	20%      { box-shadow: 0 0 0 4px #ff6a5a, 0 0 26px 6px rgba(255, 106, 90, .6); }
+}
+
+.hs-hero-heal {
+	animation: hs-hero-heal .5s ease;
+}
+
+@keyframes hs-hero-heal {
+	0%, 100% { box-shadow: none; }
+	20%      { box-shadow: 0 0 0 4px #6fbf73, 0 0 26px 6px rgba(111, 191, 115, .6); }
+}
+
+/* 击中**玩家**（英雄）的冲击环：从英雄中心扩出去的一圈暖色光 */
+.hs-fx-ring {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	border: 3px solid #ff8a5a;
+	border-radius: 50%;
+	box-shadow: 0 0 26px rgba(255, 120, 60, .7), inset 0 0 20px rgba(255, 120, 60, .45);
+	pointer-events: none;
+}
+
+/* 不能攻击的单位被点击时的反馈：红框 + 抖一下。
+   为什么要有它：上游对"不能攻击"的点击是**静默忽略**的（不扣血、不报错），
+   如果不给反馈，玩家只会觉得"这游戏坏了"。（用户 2026-10-02 报的"伤害不生效"就是它） */
+.hs-cant-attack {
+	outline: 3px solid var(--hs-danger) !important;
+	outline-offset: 2px;
+	animation: hs-cant-attack .44s ease;
+}
+
+@keyframes hs-cant-attack {
+	0%, 100% { transform: translateX(0); }
+	22%      { transform: translateX(-6px); }
+	60%      { transform: translateX(6px); }
+	85%      { transform: translateX(-3px); }
+}
+
+/* ============================ 体力徽章（用户 2026-10-03）============================
+   每个单位在**血量那个数字的上下侧**各一个数字（用户 2026-10-03 第二轮明确：
+   "应该在生命值这个数字的上下侧，而不是整个角色的上下侧"）：
+     -x  执行攻击时要**消耗**的生命值（红，贴在血量数字上方）
+     +x  本回合**没攻击**、回合结束时可以**恢复**的生命值（绿，贴在血量数字下方）
+   数值由 界面.js 的 挂体力徽章() 从 `HS_CARDS` 取（和引擎同一张表）。
+
+   血量那颗宝石（`.healthValueBackground`）在卡片右下角：`right: -5%; bottom: -9%`，
+   尺寸 `30% × 23%`（上游样式表给的）。所以：
+     宝石中心横坐标 = right: 10%（-5% + 30%/2）
+     宝石上沿       = bottom: 14%（-9% + 23%）
+     宝石下沿       = bottom: -9%
+   两个徽章就按这三条线对齐 —— 于是"血量数字上方/下方"，而不是整张卡的上下。
+   下面那个会探到卡框外面（用户要的"可以溢出单位的虚线框"），所以卡片不能裁剪子元素。 */
+.board .cardinplay {
+	overflow: visible;          /* 徽章要探出卡框，任何祖先的裁剪都会把它切掉 */
+}
+
+.board .cardinplay > .hs-cost,
+.board .cardinplay > .hs-rest {
+	position: absolute;
+	right: 10%;                 /* 对准血量宝石的中心 */
+	transform: translateX(50%); /* right 定位的是自身右边缘 → 再右移半个自身宽，正好居中 */
+	font: 700 12px/1 var(--hs-font);
+	white-space: nowrap;
+	pointer-events: none;       /* 只是个数字，别抢命中测试（拖拽/悬停还要用卡片本身） */
+	text-shadow: 0 1px 2px rgba(0, 0, 0, .85), 0 0 4px rgba(0, 0, 0, .6);
+}
+
+.board .cardinplay > .hs-cost {
+	bottom: calc(14% + 2px);    /* 贴在血量数字上方 */
+	color: #ff4a3d;
+}
+
+.board .cardinplay > .hs-rest {
+	bottom: -9%;                /* 以血量宝石下沿为准 */
+	transform: translate(50%, 100%);   /* 整个挪到宝石下方（于是溢出卡框） */
+	color: #35e04a;
+}
+
+/* 场上卡的卡名（2026-10-03 补，见 卡库.js 造场上卡 里那段说明）。
+   贴在卡片下沿、左对齐，只占左侧 62% —— 右边留给血量宝石，以及会溢出卡框的"恢复 +x"。
+   长名字（Sen'jin Shieldmasta 之类）用省略号收尾，宁可短一点也不压到徽章上。 */
+.board .cardinplay > .hs-board-name {
+	position: absolute;
+	left: 6%;
+	bottom: 3%;
+	max-width: 62%;
+	font: 700 11px/1.1 var(--hs-font);
+	color: var(--hs-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	pointer-events: none;       /* 和徽章一样：只是个标签，别抢拖拽/悬停的命中测试 */
+	text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 4px rgba(0, 0, 0, .6);
+}
+
+/* 被冻结的单位：一层淡蓝罩 + 描边。
+   冻结以前**根本没有机制**（上游只把它写在"水元素/冰片"的卡面文案里），
+   2026-10-03 起由我们自己的 `应用一次攻击()` 实现（关键词 伤害后冻结），
+   这是它唯一的可见反馈。 */
+.board .cardinplay.hs-frozen {
+	filter: saturate(.35) brightness(.9);
+	outline: 2px solid rgba(120, 200, 255, .9);
+	outline-offset: -2px;
+	box-shadow: 0 0 12px rgba(120, 200, 255, .55) inset;
+}
+
+/* 我方失败的结算条（用户 2026-10-03 第三轮）。
+   上游那套是 `alert("You've Lost!") + location.reload()`，粗糙、而且卡里不该弹 alert。
+   这里与关卡层"通关"那条对称：一个居中的小条 + 两颗按钮。
+   为什么必须补：攻击结算收回自己手里之后，"血到 0"不再由上游弹窗接管，
+   不补上就会一直跑下去（英雄 0 血继续玩）。 */
+#hs-losebar {
+	position: fixed;
+	left: 50%;
+	bottom: 6%;
+	transform: translateX(-50%);
+	z-index: 9999;
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	padding: 10px 16px;
+	background: rgba(8, 10, 16, .9);
+	border: 1px solid #e6c279;
+	border-radius: 12px;
+	color: #f0d79a;
+	font: 700 18px/1.2 var(--hs-font);
+}
+
+#hs-losebar span { margin-right: 8px; }
+
+/* ============ 待选目标的常驻提示条（`#hs-pick`；用户 2026-10-03 报的"疯狂提示"修法之一）============
+   为什么是**常驻小条**而不是飘字：飘字走演出管线，而演出期间输入被锁 ——
+   于是"进待选 → 飘一条 → 约 1 秒内点手牌被静默吞掉"（症状就是"按不出卡"），
+   而且每点一次再飘一条（症状就是"疯狂提示"）。这条**不动管线、不锁输入、一直挂着**，
+   玩家想选就选、想干别的就干别的（干别的会让那条战吼落空、并在这里说一声）。 */
+#hs-pick {
+	position: fixed;
+	left: 50%;
+	top: 12%;
+	transform: translateX(-50%);
+	z-index: 9998;
+	display: none;
+	padding: 8px 16px;
+	background: rgba(8, 10, 16, .88);
+	border: 1px solid #e6c279;
+	border-radius: 10px;
+	color: #f0d79a;
+	font: 700 15px/1.3 var(--hs-font);
+	white-space: nowrap;
+	pointer-events: none;      /* 只提示，不吃鼠标 —— 免得挡住它自己指的那些目标 */
+	box-shadow: 0 6px 20px rgba(0, 0, 0, .6);
+}
+
+#hs-pick.on { display: block; }
+
+/* ================================================================
+ * 上游那两个装饰用全屏 canvas：**一个都不用，直接收掉**
+ *
+ * 用户 2026-10-03 报的"回退回退，无法操作了"就是这两块造成的：
+ *   `#fireworkCanvas`（胜利烟花）在 index.html 里就带着 `position:absolute; z-index:10`，
+ *   尺寸 1500×1000 —— 实测它盖住**棋盘、两排格位、手牌、结束回合、设置**，
+ *   只有左边那条法力槽露在外面；`pointer-events` 是默认的 auto，于是所有点击都被它吃掉。
+ *
+ * 为什么以前看不见这个问题：把它的 `display` 置成 none 的那一句在**上游的 fireworks.js 里**
+ *   （`document.getElementById('fireworkCanvas').style.display = "none"`，加载即执行）——
+ *   阶段 E 把 fireworks.js 出列时，只审计了它挂的"全局量"，没注意它顺带管着这块画布的显隐。
+ *   `#snowCanvas` 没事，是因为它由 styles.css 藏着。
+ *
+ * 教训（已写进 11-上游接管清单）：**摘一个上游脚本时，除了"它挂了哪些全局量"，还要问
+ *   "它在加载时顺手把哪块 DOM 摆成了什么样"**；另外，验证点击类问题必须用**真实点击**
+ *   （会走命中测试），派发合成事件是绕过命中测试的 —— 那样探针永远看不到"被盖住"。
+ * ================================================================ */
+#fireworkCanvas,
+#snowCanvas {
+	display: none !important;
+}
+
+/* 上游那个「ENEMY TURN」提示条（`#computerTurn`）：**指示条不许吃点击**。
+   用户 2026-10-04 报的"卡死了"就是它 —— 实测 END TURN 按钮中心命中的元素是 `#computerTurn`
+   而不是 `#endturn`：页内重开之后它还留着 `display:block`，正好压住结束回合按钮，
+   于是真实点击全落在它身上、什么都不会发生（合成事件绕过命中测试，所以自动化探针看不出来）。
+   回合期间禁点由我们自己的演出锁负责（`HS_PIPELINE.isLocked()` + onDown 捕获期拦截），
+   不需要它来挡。 */
+#computerTurn {
+	pointer-events: none !important;
+}
+
+/* 同样处理：双方对话气泡是纯装饰（上游有时把它们显示出来放在中上），也别吃点击。 */
+#playerbubble,
+#computerbubble {
+	pointer-events: none !important;
+}
+
+/* ================================================================
+ * 我们自己的两条界面机制动效（阶段 F：上游 animations.css 整份出列之后由我们接手）
+ *
+ * 为什么只有两条：那张 629 行的 animations.css 里，64 条规则**只有 2 条**与我们的界面有关
+ * （其余全是主菜单 / 商店 / 开包 / 教程流程的炉石式招牌动作，还有 30 条没人用的 @keyframes）。
+ * ================================================================ */
+
+/* ① 卡落位的缩放弹入。
+      原来是上游的 `@keyframes placeCardAnim { 0%: scale(2) → 100%: scale(1) }`；
+      类名也从 `placeCardAnim` 换成我们自己的 `.hs-deploy` —— 加它的地方只有
+      `游戏/卡库.js` 的 `造场上卡()`（上游那份 deck.js 早已退役），所以名实都是我们的。
+      末段留了一点回弹（1 → .96 → 1），比原来那条直线收小更像"落位"。 */
+@keyframes hs-deploy {
+	0%   { transform: scale(2); }
+	70%  { transform: scale(.96); }
+	100% { transform: scale(1); }
+}
+
+.hs-deploy {
+	animation: hs-deploy .3s ease-out;
+}
+
+/* ② 设置抽屉的开合。
+      ⚠ 类名 `openMenuAnim` 是**上游的** —— 加它的那一行在 `index.html` 的内联脚本里
+      （`gamemenuContent.classList.add('openMenuAnim')`，上游代码一字不许动），
+      所以选择器里得留着它；但**动画本身是我们写的**（`@keyframes hs-menu-in`）。 */
+@keyframes hs-menu-in {
+	0%   { transform: scale(.5); }
+	50%  { transform: scale(1.2); }
+	100% { transform: scale(1); }
+}
+
+#gamemenuContent.openMenuAnim {
+	animation: hs-menu-in .25s ease-out;
+}
+
+
+/* 屏幕上那条这个页面有问题的错误条（沙盒适配层的 显示错误条 用）。
+   关键：**必须 pointer-events:none** —— 它是给人看的，绝不能再吞掉一次点击。 */
+#hs-problembar {
+	position: absolute;
+	left: 50%;
+	top: 8px;
+	transform: translateX(-50%);
+	max-width: 92%;
+	padding: 6px 12px;
+	border-radius: 8px;
+	background: rgba(120, 20, 20, .92);
+	color: #fff;
+	font: 700 13px/1.35 system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* 「返回原生界面」那条（沙盒适配层创建）。
+   为什么必须写这条：它原来是**静态定位**，而 `#hs-table` 是绝对定位的整屏图层 ——
+   静态元素永远压不过定位元素，于是按钮被牌桌盖住、**点不到**。
+   （2026-10-05 实机现象是我们自己的错误条报出来的："点不到：返回原生界面 ← 被 hs-table 盖住"。） */
+#hs-backbar {
+	position: absolute;
+	left: 12px;
+	top: 12px;
+	z-index: 40;
+}
+
+#hs-back-native {
+	position: relative;
+	z-index: 41;
+}
+
