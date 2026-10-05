@@ -100,9 +100,16 @@ def main():
     if 账号:
         跑([GIT, "config", "user.name", 账号])
         跑([GIT, "config", "user.email", 账号 + "@users.noreply.github.com"])
-        # 把已有提交的作者一并改成你（只在还没推送前做，安全）
-        跑([GIT, "commit", "--amend", "--no-edit", "--reset-author", "-q"], 允许失败=True)
-        print("✓ 提交作者已设为 " + 账号)
+        # ⚠ 只在**还没推送过**的时候改写作者。
+        #   第一版每跑一次都 `--amend --reset-author`，于是"首提交"的哈希每次都变 ——
+        #   推过一次之后再跑，本地与远端就**分叉**（ahead 2 / behind 1），还得强推。
+        #   判据：远端有没有 main 这个分支（没有 = 从没推过）。
+        未推过 = "main" not in 跑([GIT, "ls-remote", "--heads", "origin", "main"], 允许失败=True)[1]
+        if 未推过:
+            跑([GIT, "commit", "--amend", "--no-edit", "--reset-author", "-q"], 允许失败=True)
+            print("✓ 提交作者已设为 " + 账号 + "（尚未推送，改写安全）")
+        else:
+            print("· 已经推过远端，不动历史（作者若不对，用 git commit --amend 手动改）")
 
     # 大件体检：备份/ 与构建产物**不该**进仓库
     _, 清单 = 跑([GIT, "ls-files"])
