@@ -1,0 +1,46 @@
+# 把游戏发布到 GitHub Pages —— 装好之后，仓库首页那条链接点开就能直接玩。
+#
+# 为什么要这一步：GitHub 不会把仓库里的 index.html 当网页渲染（直接点开只看到源码），
+# 必须由 Pages 这个静态托管服务把它**当站点**跑起来。免费账号下 Pages 只对**公开仓库**开放。
+#
+# 部署内容：**只看 关卡挑战版/ 这一个目录**（它就是游戏的站点根：index.html / styles.css /
+# src / 游戏/ 全在里面，工具与说明不必上站）。
+name: 发布试玩站
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:          # 也可以手动点一下重跑
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 先验一遍：页面引用的本地文件是不是都在（这个闸门在本地也跑，见 工具/引用体检.js）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 引用体检（缺文件就别发布）
+        working-directory: 关卡挑战版
+        run: node 工具/引用体检.js .
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: 关卡挑战版          # ← 站点根就是游戏目录本身
+      - id: deploy
+        uses: actions/deploy-pages@v4

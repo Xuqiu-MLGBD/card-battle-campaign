@@ -1,9 +1,12 @@
 # 卡牌对战 · 关卡挑战版
 
+### ▶ [**点这里直接玩**](https://xuqiu-mlgbd.github.io/card-battle-campaign/)
+（GitHub Pages 托管，浏览器里直接开局，不用装任何东西）
+
 一套**自己写架构、自己写规则、自己写界面**的单人卡牌闯关网页游戏（纯前端、无构建、无联机），
 并附带一张可直接装进 **MMD 沙盒新聊天页**的同层卡。
 
-在线跑法：`cd 关卡挑战版 && python 工具/启动.py`（或 `python -m http.server` 后开 `index.html`），
+本地跑法：`cd 关卡挑战版 && python 工具/启动.py`（或 `python -m http.server` 后开 `index.html`），
 不需要 `npm install`，没有任何后端。
 
 ---
