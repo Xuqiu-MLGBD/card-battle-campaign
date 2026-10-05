@@ -111,28 +111,49 @@ def main():
         raise SystemExit("✗ 这些不该进仓库（先清掉再发布）：\n  " + "\n  ".join(不许[:10]))
     print("✓ 仓库内文件 %d 个，无备份/无构建产物" % len(清单.splitlines()))
 
+    # 网络：本机常有一个本地代理（Clash 之类）监听在 7897/7890 ——
+    # 实测过"api.github.com 通、github.com 连接被重置"这种半边通：gh 能建仓、git push 却挂。
+    # 所以**发现本机代理就只给这个仓库配上**（不写全局配置，免得代理一关别的仓库全挂）。
+    for 端口 in (7897, 7890, 10809, 1080):
+        try:
+            import socket
+            s = socket.socket()
+            s.settimeout(0.3)
+            if s.connect_ex(("127.0.0.1", 端口)) == 0:
+                s.close()
+                if not 跑([GIT, "config", "--get", "http.proxy"], 允许失败=True)[1]:
+                    跑([GIT, "config", "http.proxy", "http://127.0.0.1:%d" % 端口])
+                    跑([GIT, "config", "https.proxy", "http://127.0.0.1:%d" % 端口])
+                    print("✓ 检测到本机代理 127.0.0.1:%d，已给本仓库配上（仅本仓库）" % 端口)
+                break
+            s.close()
+        except Exception:
+            pass
+
     if a.dry:
         print("\n（--dry：到此为止，没有建仓也没有推送）")
         return 0
 
     # 建远程仓库并推
     可见 = "--public" if a.public else "--private"
-    _, 已有 = 跑([GH, "repo", "view", a.name, "--json", "name"], 允许失败=True)
+    # ⚠ 判断"远程有没有这个仓库"必须看**退出码**，不能看输出里有没有某个词 ——
+    #   gh 失败时的报错文本是 "…could not resolve to a Repository with the name …"，
+    #   里面就带 name（第一版这么写，于是把"不存在"当成"已存在"，推了个 404）。
+    码, 已有 = 跑([GH, "repo", "view", a.name, "--json", "name"], 允许失败=True)
     描述 = "自己写架构的单人卡牌闯关网页游戏 + MMD 沙盒同层卡（纯前端 · 无构建 · 无联机）"
-    if "name" in 已有:
+    远程 = "https://github.com/" + (账号 or "") + "/" + a.name + ".git"
+    if 码 == 0:
         print("· 远程仓库已存在，直接推")
-        跑([GH, "repo", "set-default-remote", a.name], 允许失败=True)
-        try:
-            跑([GIT, "remote", "get-url", "origin"])
-        except SystemExit:
-            跑([GIT, "remote", "add", "origin", "https://github.com/" + (账号 or "") + "/" + a.name + ".git"])
     else:
-        跑([GH, "repo", "create", a.name, 可见, "--source", 项目, "--remote", "origin",
-            "--description", 描述, "--push"])
-        print("✓ 已建仓并推送")
-        print("  https://github.com/" + (账号 or "") + "/" + a.name)
-        return 0
-
+        # ⚠ 不用 `gh repo create --source <目录>`：它在中文路径下会误判"不是 git 仓库"
+        #   （实测报 "…is not a git repository"，而 `git rev-parse` 明明是 true）。
+        #   改成"建空仓 + 自己加 remote + push"，三步都走 git，稳。
+        跑([GH, "repo", "create", a.name, 可见, "--description", 描述])
+        print("✓ 已建仓（空）")
+    if "origin" not in 跑([GIT, "remote"], 允许失败=True)[1]:
+        跑([GIT, "remote", "add", "origin", 远程])
+    else:
+        跑([GIT, "remote", "set-url", "origin", 远程])
     跑([GIT, "push", "-u", "origin", "main"])
     print("✓ 已推送")
     print("  https://github.com/" + (账号 or "") + "/" + a.name)
