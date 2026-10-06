@@ -106,16 +106,45 @@
       if (!t2) return;
       /* 布带挂在 **#game（整个舞台）** 上：铺满整屏、且不随桌面倾斜 ——
          这样平铺与立体两种视角的配色完全一致（立体模式不再有自己那层红桌布）。 */
-      var g1 = 查('#game');
-      if (g1 && !查('#game > .hs-band--enemy')) {
-        var 上 = d.createElement('div');
-        上.className = 'hs-band--enemy';
-        g1.appendChild(上);
+      /* ★ 两块布：**建在牌桌里**（与那两排格子同一个坐标系），位置**按两排格子的实际布局位置算**。
+         用户 2026-10-06："不是要铺满屏幕，就不应该铺满屏幕" —— 两块色块 = 两片战场：
+           敌方那半 = 敌方那排顶 − 一点余量 → **两排之间的中线**
+           我方那半 = 中线 → 我方那排底 + 一点余量
+         既不是"铺满画布"，也不是写死的百分比（写死的那种一换视角/换版面就错位）。
+         为什么用 offsetTop/offsetHeight 而不是 getBoundingClientRect：立体视角有 3D 投影，
+         rect 是**投影后**的值；offset* 是布局值 —— 与那两排同坐标系，投影后自然贴着它们。 */
+      function 摆布带() {
+        var 布上 = 查('#hs-table .hs-band--enemy'), 布下 = 查('#hs-table .hs-band--player');
+        var 敌行 = 查('#hs-slots-enemy'), 我排 = 查('#hs-slots-player'), 桌 = 查('#hs-table');
+        if (!布上 || !布下 || !敌行 || !我排 || !桌) return;
+        var H = 桌.offsetHeight; if (!H) return;
+        var 敌顶 = 敌行.offsetTop, 敌高 = 敌行.offsetHeight;
+        var 我顶 = 我排.offsetTop, 我高 = 我排.offsetHeight;
+        var 线 = Math.round((敌顶 + 敌高 + 我顶) / 2);      // 两排之间的中线
+        var 垫 = Math.round(H * 0.015);
+        var 顶 = Math.max(0, 敌顶 - 垫), 底 = Math.min(H, 我顶 + 我高 + 垫);
+        var 键 = [顶, 线, 底].join(',');
+        if (布上.__hsKey === 键) return;                   // 没变就不写（省得每 0.8s 触发一次重排）
+        布上.__hsKey = 键;
+        布上.style.left = '0'; 布上.style.width = '100%';
+        布上.style.top = 顶 + 'px'; 布上.style.height = Math.max(1, 线 - 顶) + 'px';
+        布下.style.left = '0'; 布下.style.width = '100%';
+        布下.style.top = 线 + 'px'; 布下.style.height = Math.max(1, 底 - 线) + 'px';
       }
-      if (g1 && !查('#game > .hs-band--player')) {
-        var 下 = d.createElement('div');
-        下.className = 'hs-band--player';
-        g1.appendChild(下);
+      var 桌0 = 查('#hs-table');
+      if (桌0) {
+        if (!查('#hs-table .hs-band--enemy')) {
+          var b上 = d.createElement('div');
+          b上.className = 'hs-band--enemy';
+          桌0.appendChild(b上);
+        }
+        if (!查('#hs-table .hs-band--player')) {
+          var b下 = d.createElement('div');
+          b下.className = 'hs-band--player';
+          桌0.appendChild(b下);
+        }
+        摆布带();
+        if (!W.__hsBandTimer) { try { W.__hsBandTimer = W.setInterval(摆布带, 800); } catch (e) {} }
       }
       /* 两层摆件层（见 游戏/样式.css 顶部的说明）：
          #hs-props 随桌面倾斜、#hs-props-flat 不倾斜；摆件一律用设计稿百分比定位。 */
