@@ -571,7 +571,7 @@
    *     界面（SLOT_COUNT）与引擎（状态.场上上限）都读它。
    * 两条路都是整页重载：原地重开要清一堆脚本作用域的旧状态（见本文件头那段说明）。
    */
-  var mainEl = null, startEl = null, codexEl = null, creditsEl = null, settingsEl = null, importEl = null;
+  var mainEl = null, startEl = null, codexEl = null, creditsEl = null, settingsEl = null, importEl = null, deckEditEl = null;
 
   /* ==================== 美术方向（2026-10-06）：主界面（图一）· 选关（图二）====================
      参考是《空洞骑士》那两屏的**骨架**，不是它的图：
@@ -608,11 +608,11 @@
     '#hs-start .sl-wrap{position:absolute;inset:0;padding:4vh 4vw;box-sizing:border-box;display:flex;flex-direction:column;}',
     '#hs-start .sl-title{font:400 40px/1 Georgia,"Songti SC",serif;letter-spacing:12px;color:#e8dcc6;}',
     '#hs-start .sl-note{margin:10px 0 0;font:400 15px/1.6 Georgia,"Songti SC",serif;letter-spacing:1px;color:#9a8f7e;}',
-    '#hs-start .sl-row{display:flex;gap:14px;justify-content:center;align-items:flex-end;flex:1;padding:3vh 0 0;}',
-    '#hs-start .sl-card{position:relative;width:15%;min-width:150px;cursor:pointer;border:1px solid #4a423a;',
+    '#hs-start .sl-row{display:flex;gap:14px;justify-content:center;align-items:stretch;flex:1;padding:3vh 0 0;}',
+    '#hs-start .sl-card{position:relative;width:15%;min-width:150px;min-height:430px;display:flex;flex-direction:column;cursor:pointer;border:1px solid #4a423a;',
     'background:rgba(20,17,15,.6);padding:10px 10px 12px;transition:border-color .15s,background .15s,transform .15s;}',
     '#hs-start .sl-card:hover{border-color:#8d7c5c;background:rgba(32,27,23,.75);}',
-    '#hs-start .sl-card.sel{border-color:#cbb489;background:rgba(38,32,26,.85);transform:translateY(-4px);}',
+    '#hs-start .sl-card.sel{border-color:#cbb489;background:rgba(38,32,26,.85);box-shadow:inset 0 3px 0 #cbb489;}',
     '#hs-start .sl-card.lock{opacity:.42;cursor:not-allowed;}',
     '#hs-start .sl-name{font:400 17px/1.35 Georgia,"Songti SC",serif;letter-spacing:2px;color:#e8dcc6;text-align:center;}',
     '#hs-start .sl-tier{margin-top:4px;font:400 13px/1.4 Georgia,serif;letter-spacing:1px;color:#9a8f7e;text-align:center;}',
@@ -620,7 +620,7 @@
     '#hs-start .sl-art{margin:10px 0;aspect-ratio:3/4;border:1px dashed #5c5246;border-radius:2px;',
     'display:flex;align-items:center;justify-content:center;color:#5c5246;font:400 12px/1 Georgia,serif;letter-spacing:2px;',
     'background:linear-gradient(160deg,#221d19,#171412);}',
-    '#hs-start .sl-desc{margin-top:2px;font:400 12px/1.6 Georgia,"Microsoft YaHei",sans-serif;color:#8d8272;text-align:center;min-height:3.2em;}',
+    '#hs-start .sl-desc{margin-top:2px;font:400 12px/1.6 Georgia,"Microsoft YaHei",sans-serif;color:#8d8272;text-align:center;flex:1;}',
     '#hs-start .sl-mark{margin-top:6px;text-align:center;font:400 12px/1 Georgia,serif;letter-spacing:2px;color:#cbb489;visibility:hidden;}',
     '#hs-start .sl-card.sel .sl-mark{visibility:visible;}',
     '#hs-start .sl-clear{margin-top:6px;text-align:center;font:400 12px/1 Georgia,serif;letter-spacing:1px;color:#7f9a72;}',
@@ -636,7 +636,7 @@
     '#hs-start .sl-freeh{font:400 15px/1 Georgia,"Songti SC",serif;letter-spacing:3px;color:#9a8f7e;margin-bottom:8px;}',
     '#hs-start .sl-mini{display:flex;gap:10px;}',
     '#hs-start .sl-mini > *{width:auto;min-width:118px;flex:0 0 auto;padding:8px 14px;text-align:center;font:400 14px/1.5 Georgia,"Songti SC",serif;}',
-    '#hs-start .sl-back{position:absolute;right:4vw;bottom:3vh;}',
+    '#hs-start .sl-back{position:absolute;right:4vw;top:3.2vh;}',
     /* —— 主界面背景图（用户 2026-10-06 提供）—— 铺满整屏，上面压一层暗纱保证字读得清 —— */
     '#hs-mainmenu .mn-art{background-image:url("素材/主页面背景.png");background-size:cover;background-position:center;}',
     '#hs-mainmenu .mn-veil{position:absolute;inset:0;background:linear-gradient(90deg,rgba(6,5,5,.88) 0%,rgba(6,5,5,.58) 45%,rgba(6,5,5,.34) 100%);}',
@@ -835,6 +835,18 @@
     };
     行.appendChild(导);
   }
+  /* 卡组编辑：**占位**（用户 2026-10-06 要求加在主菜单"卡牌图鉴"下方；具体规则待定） */
+  function openDeckEdit() {
+    if (!deckEditEl) {
+      deckEditEl = 小浮层('hs-deckedit', '卡组编辑', [
+        '这里将来放"组自己的卡组"：从已解锁的卡里挑若干张、存成套，开局时选用。',
+        '它和「卡组导入」是一对：这里编，那里把别人编好的套组导进来。',
+        '当前版本还没有这套规则，先用占位提示 —— 免得点了没反应（那类 bug 我们踩过太多次）。',
+      ]);
+    }
+    deckEditEl.classList.add('on');
+  }
+
   function openDeckImport() {
     if (!importEl) {
       importEl = 小浮层('hs-deckimport', '卡组导入', [
@@ -863,6 +875,7 @@
       ['开始游戏', openStart],
       ['联机对战', function () { 说一句('联机对战：敬请期待'); }],
       ['卡牌图鉴', openCodex],
+      ['卡组编辑', openDeckEdit],
       ['卡组导入', openDeckImport],
       ['设置', openSettings],
       ['开源与致谢', openCredits],
@@ -898,8 +911,13 @@
     卡.appendChild(el('div', 'sl-tier', 项.副题));
     卡.appendChild(el('div', 'sl-art', '占位图'));      // 美术图到位后替换这里的背景
     卡.appendChild(el('div', 'sl-desc', 项.说明 || ''));
+    /* ⚠ 「▾ 当前」与「已通关」两行**无论有没有都占位**（靠 visibility 控制显隐）：
+       否则"多一行"的那张卡会被撑高、把整排顶得参差不齐（用户 2026-10-06：
+       "挑战关的第一关比其他关卡位置都高了一截" —— 就因为只有它带「已通关」）。 */
     卡.appendChild(el('div', 'sl-mark', '▾ 当前'));
-    if (项.已通关) 卡.appendChild(el('div', 'sl-clear', '已通关'));
+    var 通 = el('div', 'sl-clear', '已通关');
+    if (!项.已通关) 通.style.visibility = 'hidden';
+    卡.appendChild(通);
     卡.onclick = function () { 项.选中(); };
     卡.ondblclick = function () { 项.开始(); };
     return 卡;

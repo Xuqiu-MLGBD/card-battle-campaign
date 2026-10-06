@@ -98,6 +98,24 @@
       });
       定('endturn', 钮[0]);
     }
+    /* ★ 桌面分成两块：在 `#hs-table` 里放两条"布带"（上方敌方 / 下方我方）。
+       为什么用布带而不是给棋盘盒子加背景：盒子一动，格子与卡片的落点就会跟着偏；
+       布带只上色、不参与布局（pointer-events:none），几何一点不碰。 */
+    (function () {
+      var t2 = 查('#hs-table');
+      if (!t2) return;
+      if (!查('#hs-table .hs-band--enemy')) {
+        var 上 = d.createElement('div');
+        上.className = 'hs-band--enemy';
+        t2.appendChild(上);
+      }
+      if (!查('#hs-table .hs-band--player')) {
+        var 下 = d.createElement('div');
+        下.className = 'hs-band--player';
+        t2.appendChild(下);
+      }
+    })();
+
     /* ★ 清掉 `#game` 里的**裸文字**（用户 2026-10-06："对局页面左上角有 `V>` 的字符残留"）。
        来源：上游骨架里 `#game` 标签**内部**写了两个字（`v>`）—— 它不属于任何子元素、也没人管它，
        于是永远画在牌局左上角（按元素查是查不到的：命中测试命中的是我们自己的牌桌图层）。
