@@ -637,6 +637,24 @@
     '#hs-start .sl-mini{display:flex;gap:10px;}',
     '#hs-start .sl-mini > *{width:auto;min-width:118px;flex:0 0 auto;padding:8px 14px;text-align:center;font:400 14px/1.5 Georgia,"Songti SC",serif;}',
     '#hs-start .sl-back{position:absolute;right:4vw;bottom:3vh;}',
+    /* —— 主界面背景图（用户 2026-10-06 提供）—— 铺满整屏，上面压一层暗纱保证字读得清 —— */
+    '#hs-mainmenu .mn-art{background-image:url("素材/主页面背景.png");background-size:cover;background-position:center;}',
+    '#hs-mainmenu .mn-veil{position:absolute;inset:0;background:linear-gradient(90deg,rgba(6,5,5,.88) 0%,rgba(6,5,5,.58) 45%,rgba(6,5,5,.34) 100%);}',
+    '#hs-mainmenu .mn-list{top:42%;}',
+    '#hs-mainmenu .mn-version{position:absolute;right:6%;bottom:6%;font:400 13px/1 Georgia,serif;letter-spacing:2px;color:#6d6357;}',
+    /* —— 选关：正右侧切页（挑战模式 ⇄ 自由模式）—— */
+    '#hs-start .sl-switch{position:absolute;right:2.4vw;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;}',
+    '#hs-start .sl-switch button{appearance:none;background:rgba(20,17,15,.72);border:1px solid #4a423a;color:#c3b69f;cursor:pointer;',
+    'font:400 14px/1.6 Georgia,"Songti SC",serif;letter-spacing:3px;padding:10px 9px;writing-mode:vertical-rl;}',
+    '#hs-start .sl-switch button:hover{border-color:#cbb489;color:#f2e7cf;}',
+    '#hs-start .sl-switch button.on{border-color:#cbb489;color:#f2e7cf;background:rgba(58,49,38,.85);}',
+    /* —— 小浮层的按键：与页面同一套笔触（细边 · 衬线 · 字距）—— */
+    '.hsx-btn{appearance:none;background:rgba(20,17,15,.72);border:1px solid #4a423a;color:#c3b69f;cursor:pointer;',
+    'font:400 15px/1.5 Georgia,"Songti SC",serif;letter-spacing:2px;padding:9px 18px;margin:4px 8px 4px 0;}',
+    '.hsx-btn:hover{border-color:#cbb489;color:#f2e7cf;}',
+    '.hsx-btn.on{border-color:#cbb489;color:#f2e7cf;background:rgba(58,49,38,.85);}',
+    '.hsx-row{display:flex;flex-wrap:wrap;align-items:center;}',
+    '.hsx-note{font:400 12px/1.8 Georgia,"Microsoft YaHei",sans-serif;color:#8d8272;}',
     /* —— 小浮层：开源与致谢 / 设置 / 卡组导入 —— */
     '.hsx-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9993;width:min(680px,92vw);',
     'background:rgba(24,20,18,.97);border:1px solid #4a423a;padding:22px 26px;color:#d9d2c4;display:none;}',
@@ -696,24 +714,127 @@
     creditsEl.classList.add('on');
   }
 
-  /* 设置：主页面这一层只管"数据与版本"（局内的设置按钮另有那套菜单） */
+  /* 设置（主页面这一层）：按键与页面同一套样式 + **导出报错**（用户 2026-10-06 要求）+
+     我方布局样式（见下：对局里我方那一半的配色，可切换、也可由文件导入新增） */
   function openSettings() {
     if (!settingsEl) {
       settingsEl = 小浮层('hs-mainsettings', '设置', []);
-      var 清 = el('button', 'sl-nav', '清空关卡进度');
+      var 行1 = el('div', 'hsx-row');
+      var 导出 = el('button', 'hsx-btn', '导出报错（本局信息）');
+      导出.onclick = function () {
+        /* 报错面板由 界面.js 提供（它有这一局的权威状态、场面、最近动作）。
+           面板右上角有关闭键、也能点面板外关掉 —— 用户要求"报错页面要可以关闭"。 */
+        try {
+          if (W.HS_INTERACT && typeof W.HS_INTERACT.导出报告 === 'function') W.HS_INTERACT.导出报告();
+          else 说一句('导出报错：要先进一局（界面层还没就绪）');
+        } catch (e) { 说一句('导出报错失败：' + (e && e.message)); }
+      };
+      行1.appendChild(导出);
+      var 清 = el('button', 'hsx-btn', '清空关卡进度');
       清.onclick = function () {
         try { if (typeof clearProgress === 'function') clearProgress(); } catch (e) {}
         说一句('进度已清空（刷新后生效）');
       };
-      var 版 = el('p', null, '构建版本：' + (W.HS_BUILD || '（开发中）'));
-      settingsEl.appendChild(清);
-      settingsEl.appendChild(版);
-      settingsEl.appendChild(el('p', null, '进度存在浏览器本机（localStorage），清缓存即丢失。'));
+      行1.appendChild(清);
+      settingsEl.appendChild(行1);
+
+      settingsEl.appendChild(el('p', null, '我方布局样式（只改对局里我方那一半的配色）'));
+      var 行2 = el('div', 'hsx-row');
+      行2.id = 'hsx-mystyles';
+      settingsEl.appendChild(行2);
+
+      settingsEl.appendChild(el('p', 'hsx-note',
+        '敌方布局区是预设样式（将来固定成美术给的那一套）；我方可以换，也可以导入别人做的样式文件来新增。'));
+
+      settingsEl.appendChild(el('p', null, '构建版本：' + (W.HS_BUILD || '（开发中）')));
+      settingsEl.appendChild(el('p', 'hsx-note', '进度存在浏览器本机（localStorage），清缓存即丢失。'));
     }
+    渲染布局样式();
     settingsEl.classList.add('on');
   }
 
-  /* 卡组导入：**占位**（用户 2026-10-06 把它列进了主页面，具体规则待定） */
+  /* ==================== 我方布局样式（用户 2026-10-06）====================
+     对局里**敌方那一半是预设**（将来固定成美术给的那套），**我方那一半可以换**，
+     甚至可以导入别人做的样式文件来新增原本没有的样式。做法很轻：
+       · 样式就两个量（底色、描边色）→ 写成 `#game` 上的两个 CSS 变量（`--hs-my-bg/--hs-my-line`）；
+       · 预设放在下面的表里，自定义样式存在 localStorage（导入的文件只读进它）；
+       · 切换只是改这两个变量 —— 不动 DOM 结构、不碰演出。
+     为什么不做成"整套 CSS 文件导入"：那等于让外部样式表改我们的布局，
+     出问题时既难查也没法保证不越界。两个颜色既能满足"换风格"，又始终在我们掌控里。 */
+  var 样式预设 = {
+    '默认': null,
+    '赤铜': { 底: 'rgba(128,56,30,.55)', 边: '#b9743f' },
+    '青玉': { 底: 'rgba(26,86,76,.55)', 边: '#4fb3a0' },
+    '墨黑': { 底: 'rgba(28,28,32,.62)', 边: '#6f6f78' },
+  };
+  var 样式键 = 'hs_my_style_v1';
+
+  function 取样式存档() {
+    try {
+      var s = W.localStorage.getItem(样式键);
+      var o = s ? JSON.parse(s) : null;
+      return (o && typeof o === 'object') ? o : { 当前: '默认', 自定义: {} };
+    } catch (e) { return { 当前: '默认', 自定义: {} }; }
+  }
+  function 存样式存档(o) {
+    try { W.localStorage.setItem(样式键, JSON.stringify(o)); } catch (e) {}
+  }
+  function 应用布局样式(名) {
+    var 存 = 取样式存档();
+    var 定 = 样式预设[名] || (存.自定义 && 存.自定义[名]) || null;
+    var g = W.document.getElementById('game');
+    if (g) {
+      if (定) {
+        g.style.setProperty('--hs-my-bg', 定.底 || 定['底'] || '');
+        g.style.setProperty('--hs-my-line', 定.边 || 定['边'] || '');
+      } else {
+        g.style.removeProperty('--hs-my-bg');
+        g.style.removeProperty('--hs-my-line');
+      }
+    }
+    存.当前 = 名;
+    存样式存档(存);
+    return true;
+  }
+  function 渲染布局样式() {
+    var d = W.document, 行 = d.getElementById('hsx-mystyles');
+    if (!行) return;
+    行.innerHTML = '';
+    var 存 = 取样式存档();
+    var 名表 = Object.keys(样式预设).concat(Object.keys(存.自定义 || {}));
+    名表.forEach(function (名) {
+      var b = el('button', 'hsx-btn' + (存.当前 === 名 ? ' on' : ''), 名);
+      b.onclick = function () { 应用布局样式(名); 渲染布局样式(); 说一句('我方布局样式：' + 名); };
+      行.appendChild(b);
+    });
+    var 导 = el('button', 'hsx-btn', '导入样式文件…');
+    导.onclick = function () {
+      var inp = d.createElement('input');
+      inp.type = 'file';
+      inp.accept = '.json,application/json';
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0];
+        if (!f) return;
+        var r = new W.FileReader();
+        r.onload = function () {
+          try {
+            var o = JSON.parse(String(r.result));
+            if (!o || !o.名称) throw new Error('缺少字段"名称"');
+            var 存2 = 取样式存档();
+            存2.自定义 = 存2.自定义 || {};
+            存2.自定义[o.名称] = { 底: o.底 || '', 边: o.边 || '' };
+            存样式存档(存2);
+            应用布局样式(o.名称);
+            渲染布局样式();
+            说一句('已导入样式：' + o.名称);
+          } catch (e) { 说一句('样式文件读不了：' + (e && e.message)); }
+        };
+        r.readAsText(f);
+      };
+      inp.click();
+    };
+    行.appendChild(导);
+  }
   function openDeckImport() {
     if (!importEl) {
       importEl = 小浮层('hs-deckimport', '卡组导入', [
@@ -729,18 +850,18 @@
     var wrap = el('div');
     wrap.id = 'hs-mainmenu';
     wrap.appendChild(el('div', 'mn-bg'));
-    var art = el('div', 'mn-art');
-    art.appendChild(el('div', 'mn-artnote', '背景图占位（待提供）'));
-    wrap.appendChild(art);
+    wrap.appendChild(el('div', 'mn-art'));            // 背景图（用户提供）
+    wrap.appendChild(el('div', 'mn-veil'));           // 暗纱：保证左侧文字读得清
 
     var t = el('div', 'mn-title');
-    t.appendChild(el('div', 'mn-app', W.HS_APP_NAME || '卡牌对战'));
-    t.appendChild(el('div', 'mn-sub', '关卡挑战'));
+    t.appendChild(el('div', 'mn-app', '联合派对'));    // 右上大字（用户 2026-10-06 指定）
+    t.appendChild(el('div', 'mn-sub', '童年毁坏'));    // 右上小字
     wrap.appendChild(t);
 
     var list = el('div', 'mn-list');
     [
       ['开始游戏', openStart],
+      ['联机对战', function () { 说一句('联机对战：敬请期待'); }],
       ['卡牌图鉴', openCodex],
       ['卡组导入', openDeckImport],
       ['设置', openSettings],
@@ -752,8 +873,9 @@
     });
     wrap.appendChild(list);
 
-    wrap.appendChild(el('div', 'mn-foot', '进度存在本机 · 单人 · 无联机'));
-    wrap.appendChild(el('div', 'mn-keys', '点左边的字进入 · 回车开始当前关'));
+    /* 左下角那行提示按用户要求去掉；右下角改成**版本号** */
+    var 版 = el('div', 'mn-version', '版本 ' + (W.HS_BUILD || '开发中'));
+    wrap.appendChild(版);
     wrap.classList.add('on');
 
     ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(wrap);
@@ -761,47 +883,89 @@
     return wrap;
   }
 
-  /* 选关：图二的排布 —— 五张竖卡横排 + 当前标记 + 底部说明 + ◀▶ + 自由关一行。
-     卡里的数值/说明**全部读关卡表**（卡库.js 乙段），不在这里抄第二份。 */
-  var 选中关 = 1;                 // 当前选中的是第几关（图二里"Current"那张）
+  /* 选关：两套模式共用**同一种卡**（用户 2026-10-06：自由选关也做成挑战关的样式）。
+     正右侧是切页（挑战模式 ⇄ 自由模式），左上角标题与说明随模式换。 */
+  var 选中关 = 1;                 // 挑战模式里"当前"那张
+  var 选中自由 = 3;               // 自由模式里"当前"那张
+  var 选关模式 = 'challenge';     // 'challenge' | 'free'
 
-  function 造选关卡(lv, 序) {
+  /* 造一张卡：两种模式共用（自由关只是换了数据来源） */
+  function 造选关卡(项) {
     var 卡 = el('div', 'sl-card');
-    卡.dataset.关 = String(lv.id);
-    var 开 = (typeof isUnlocked === 'function') ? isUnlocked(lv.id) : true;
-    if (!开) 卡.classList.add('lock');
-    卡.appendChild(el('div', 'sl-name', lv.name));
-    卡.appendChild(el('div', 'sl-tier', (TIER_NAME && TIER_NAME[lv.tier]) || ('难度 ' + lv.tier) + ' · ' + lv.slots + ' 格'));
-    var 图 = el('div', 'sl-art', '占位图');
-    卡.appendChild(图);
-    卡.appendChild(el('div', 'sl-desc', lv.blurb || ''));
-    var 标 = el('div', 'sl-mark', '▾ 当前');
-    卡.appendChild(标);
-    if (typeof isCleared === 'function' && isCleared(lv.id)) 卡.appendChild(el('div', 'sl-clear', '已通关'));
-    卡.onclick = function () {
-      if (!开) { 说一句('这一关还没解锁：先通过第 ' + (lv.id - 1) + ' 关'); return; }
-      选中一关(lv.id);
-    };
-    卡.ondblclick = function () { if (开) enterLevel(lv.id); };
+    卡.dataset.关 = String(项.键);
+    if (项.锁) 卡.classList.add('lock');
+    卡.appendChild(el('div', 'sl-name', 项.名));
+    卡.appendChild(el('div', 'sl-tier', 项.副题));
+    卡.appendChild(el('div', 'sl-art', '占位图'));      // 美术图到位后替换这里的背景
+    卡.appendChild(el('div', 'sl-desc', 项.说明 || ''));
+    卡.appendChild(el('div', 'sl-mark', '▾ 当前'));
+    if (项.已通关) 卡.appendChild(el('div', 'sl-clear', '已通关'));
+    卡.onclick = function () { 项.选中(); };
+    卡.ondblclick = function () { 项.开始(); };
     return 卡;
   }
 
-  function 选中一关(id) {
-    选中关 = id;
-    renderStart();
+  function 挑战项(lv) {
+    return {
+      键: 'lv' + lv.id, 名: lv.name,
+      副题: ((TIER_NAME && TIER_NAME[lv.tier]) || ('难度 ' + lv.tier)) + ' · ' + lv.slots + ' 格',
+      说明: lv.blurb || '',
+      锁: !((typeof isUnlocked === 'function') ? isUnlocked(lv.id) : true),
+      已通关: (typeof isCleared === 'function') ? isCleared(lv.id) : false,
+      选中: function () {
+        if (this.锁) { 说一句('这一关还没解锁：先通过第 ' + (lv.id - 1) + ' 关'); return; }
+        选中关 = lv.id; renderStart();
+      },
+      开始: function () { if (!this.锁) enterLevel(lv.id); },
+    };
+  }
+
+  function 自由项(n) {
+    return {
+      键: 'free' + n, 名: '自由关 · ' + n + ' 格', 副题: '双方各 ' + n + ' 格 · 不计进度',
+      说明: '随手练一局：牌组是完整的，双方格数一样，赢了不记进度。',
+      锁: false, 已通关: false,
+      选中: function () { 选中自由 = n; renderStart(); },
+      开始: function () { enterFree(n); },
+    };
   }
 
   function renderStart() {
     var d = W.document, 行 = d.getElementById('hsp-levels');
     if (!行) return;
+    var 挑战 = (选关模式 === 'challenge');
     行.innerHTML = '';
-    (W.CAMPAIGN_LEVELS || []).forEach(function (lv) { 行.appendChild(造选关卡(lv)); });
-    var 当 = (W.CAMPAIGN_LEVELS || []).filter(function (lv) { return lv.id === 选中关; })[0];
-    var 线 = d.getElementById('sl-line');
-    if (线) 线.textContent = 当 ? (当.name + '：' + (当.blurb || '')) : '';
-    // 标记当前那张
+    if (挑战) {
+      (W.CAMPAIGN_LEVELS || []).forEach(function (lv) { 行.appendChild(造选关卡(挑战项(lv))); });
+    } else {
+      [1, 3, 5].forEach(function (n) { 行.appendChild(造选关卡(自由项(n))); });
+    }
+    var 当前键 = 挑战 ? ('lv' + 选中关) : ('free' + 选中自由);
     Array.prototype.forEach.call(行.children, function (卡) {
-      卡.classList.toggle('sel', Number(卡.dataset.关) === 选中关);
+      卡.classList.toggle('sel', 卡.dataset.关 === 当前键);
+    });
+    /* 左上角标题与说明随模式换（用户给的原文照抄） */
+    var 题 = d.getElementById('sl-title');
+    if (题) 题.textContent = 挑战 ? '挑战模式' : '自由模式';
+    var 说 = d.getElementById('sl-note');
+    if (说) 说.textContent = 挑战
+      ? '每完成一关，解锁部分卡牌，全部挑战成功解锁全套卡牌。'
+      : '双方格数自选，不计进度 —— 随手练一局。';
+    /* 底部那一行：当前那张的完整说明 */
+    var 线 = d.getElementById('sl-line');
+    if (线) {
+      if (挑战) {
+        var 当 = (W.CAMPAIGN_LEVELS || []).filter(function (lv) { return lv.id === 选中关; })[0];
+        线.textContent = 当 ? (当.name + '：' + (当.blurb || '')) : '';
+      } else {
+        线.textContent = '自由关 · 双方各 ' + 选中自由 + ' 格：不计进度，随时可玩。';
+      }
+    }
+    var 开 = d.getElementById('sl-go');
+    if (开) 开.textContent = 挑战 ? '开始这一关' : '开始自由对局';
+    /* 右侧切页按钮的选中态 */
+    Array.prototype.forEach.call(d.querySelectorAll('#sl-switch button'), function (b) {
+      b.classList.toggle('on', b.dataset.模式 === 选关模式);
     });
   }
 
@@ -810,8 +974,12 @@
       startEl = el('div');
       startEl.id = 'hs-start';
       var w = el('div', 'sl-wrap');
-      w.appendChild(el('div', 'sl-title', '选关'));
-      w.appendChild(el('div', 'sl-note', '关卡格数逐关 +1（第一关双方各 1 格 … 第五关 5 格）；随时可以回来换。'));
+      var 题 = el('div', 'sl-title', '挑战模式');
+      题.id = 'sl-title';
+      w.appendChild(题);
+      var 说 = el('div', 'sl-note', '');
+      说.id = 'sl-note';
+      w.appendChild(说);
 
       var 行 = el('div', 'sl-row');
       行.id = 'hsp-levels';
@@ -820,26 +988,35 @@
       var 条 = el('div', 'sl-bar');
       条.id = 'sl-bar';
       var 前 = el('button', 'sl-nav', '◀');
-      前.onclick = function () { var n = Math.max(1, 选中关 - 1); 选中一关(n); };
+      前.onclick = function () {
+        if (选关模式 === 'challenge') 选中关 = Math.max(1, 选中关 - 1);
+        else { var 序 = [1, 3, 5], i = 序.indexOf(选中自由); 选中自由 = 序[Math.max(0, i - 1)]; }
+        renderStart();
+      };
       var 线 = el('div', 'sl-line');
       线.id = 'sl-line';
       var 后 = el('button', 'sl-nav', '▶');
-      后.onclick = function () { var n = Math.min((W.CAMPAIGN_LEVELS || []).length, 选中关 + 1); 选中一关(n); };
+      后.onclick = function () {
+        if (选关模式 === 'challenge') 选中关 = Math.min((W.CAMPAIGN_LEVELS || []).length, 选中关 + 1);
+        else { var 序 = [1, 3, 5], i = 序.indexOf(选中自由); 选中自由 = 序[Math.min(序.length - 1, i + 1)]; }
+        renderStart();
+      };
       var 开 = el('button', 'sl-go', '开始这一关');
-      开.onclick = function () { enterLevel(选中关); };
+      开.id = 'sl-go';
+      开.onclick = function () { if (选关模式 === 'challenge') enterLevel(选中关); else enterFree(选中自由); };
       条.appendChild(前); 条.appendChild(后); 条.appendChild(线); 条.appendChild(开);
       w.appendChild(条);
 
-      var 自由 = el('div', 'sl-free');
-      自由.appendChild(el('div', 'sl-freeh', '自由关 · 不计进度'));
-      var 迷你 = el('div', 'sl-mini');
-      [1, 3, 5].forEach(function (n) {
-        var b = el('button', 'sl-nav', '双方各 ' + n + ' 格');
-        b.onclick = function () { enterFree(n); };
-        迷你.appendChild(b);
+      /* 正右侧：切页（挑战模式 ⇄ 自由模式） */
+      var 切 = el('div', 'sl-switch');
+      切.id = 'sl-switch';
+      [['challenge', '挑战模式'], ['free', '自由模式']].forEach(function (t) {
+        var b = el('button', null, t[1]);
+        b.dataset.模式 = t[0];
+        b.onclick = function () { 选关模式 = t[0]; renderStart(); };
+        切.appendChild(b);
       });
-      自由.appendChild(迷你);
-      w.appendChild(自由);
+      w.appendChild(切);
 
       var 退 = el('button', 'sl-nav sl-back', '返回主页面');
       退.onclick = function () { startEl.classList.remove('on'); };

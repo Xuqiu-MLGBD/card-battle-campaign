@@ -3920,7 +3920,9 @@
     playFromHand: playFromHand, refillIfEmpty: refillIfEmpty,
     slotsOf: function (side) { return slots[side].slice(); },
     cancel: cancelAim,
-    check: check,                    // 自检：把谈定的东西逐条断言（见 变更清单.md）
+    check: check,
+    导出报告: showReport,            // 设置面板的「导出报错」调它（面板本身可关）
+                    // 自检：把谈定的东西逐条断言（见 变更清单.md）
     enemyHand: function () {         // 敌方手牌（加了抽牌之后才有意义；调试与验证用）
       return enemyHand.map(function (c) { return c && c['name']; });
     },

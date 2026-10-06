@@ -98,6 +98,18 @@
       });
       定('endturn', 钮[0]);
     }
+    /* ★ 清掉 `#game` 里的**裸文字**（用户 2026-10-06："对局页面左上角有 `V>` 的字符残留"）。
+       来源：上游骨架里 `#game` 标签**内部**写了两个字（`v>`）—— 它不属于任何子元素、也没人管它，
+       于是永远画在牌局左上角（按元素查是查不到的：命中测试命中的是我们自己的牌桌图层）。
+       清掉它的直接子文本节点即可，元素一个不动。 */
+    (function () {
+      var g = 查('#game');
+      if (!g) return;
+      for (var i = g.childNodes.length - 1; i >= 0; i--) {
+        var n = g.childNodes[i];
+        if (n.nodeType === 3 && String(n.nodeValue || '').trim()) g.removeChild(n);
+      }
+    })();
     /* ★ 两座英雄容器：**缺了就自己造一座**（不只是补 id）。
        实测（真机 + 技能自带的平台全景预览里都复现）：
          骨架字符串里明明有 `<div class="cardinplay" id="playerhero">`，
