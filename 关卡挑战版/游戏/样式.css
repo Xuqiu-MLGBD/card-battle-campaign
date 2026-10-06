@@ -371,22 +371,42 @@ body {
    分成两块的线仍取设计稿的**对峙线 40%**，换算到这一圈里就是：
      敌方 = -14% … 34.8%（高 48.8%＝122% 的 40%）      我方 = 34.8% … 108%（高 73.2%）
    这一圈与 ::before 完全重合 → **立体模式下的桌面大小与旧版一模一样**，只是颜色换成了这两块。 */
+/* ⚠ 两种视角**各一套几何**（2026-10-06 踩过一次，记下来）：
+     · 平铺：桌子就是整个舞台 → 两块布**正好铺满舞台**（40% / 60%），不多占一个像素；
+     · 立体：桌子被压短、并在 3D 里有透视 → 必须铺到旧桌布那一圈（-2%/-14%/104%×122%），
+       否则近边会缺一块、投影后分界也落不到两排布局位之间。
+   把立体那套用到平铺上会**溢出成两大块盖住屏幕**（那圈的百分比是相对被压短的桌子算的）。 */
 .hs-band--enemy {
-	left: -2%;
-	width: 104%;
-	top: -14%;
-	height: 48.8%;
+	left: 0;
+	width: 100%;
+	top: 0;
+	height: 40%;
 	background: linear-gradient(180deg, rgba(74, 22, 24, .62), rgba(58, 18, 20, .42));
 	border-bottom: 1px solid rgba(150, 62, 58, .5);
 }
 
 .hs-band--player {
+	left: 0;
+	width: 100%;
+	top: 40%;
+	height: 60%;
+	background: linear-gradient(0deg, var(--hs-my-bg, rgba(26, 46, 56, .62)), rgba(14, 26, 32, .40));
+	border-top: 1px solid var(--hs-my-line, rgba(74, 132, 150, .5));
+}
+
+/* 立体视角：铺到旧桌布那一圈（几何与 #hs-table::before 完全重合） */
+#game.view-tilt .hs-band--enemy {
+	left: -2%;
+	width: 104%;
+	top: -14%;
+	height: 48.8%;
+}
+
+#game.view-tilt .hs-band--player {
 	left: -2%;
 	width: 104%;
 	top: 34.8%;
 	height: 73.2%;
-	background: linear-gradient(0deg, var(--hs-my-bg, rgba(26, 46, 56, .62)), rgba(14, 26, 32, .40));
-	border-top: 1px solid var(--hs-my-line, rgba(74, 132, 150, .5));
 }
 
 /* --- 摆件层（用户要往桌面上放摆件与美化素材）-----------------------------------------
@@ -415,20 +435,6 @@ body {
 	background-repeat: no-repeat;
 	background-position: center;
 	background-size: contain;
-}
-
-.hs-band--enemy {
-	top: 0;
-	height: 50%;
-	background: linear-gradient(180deg, rgba(74, 22, 24, .62), rgba(58, 18, 20, .40));
-	border-bottom: 1px solid rgba(150, 62, 58, .45);
-}
-
-.hs-band--player {
-	bottom: 0;
-	height: 50%;
-	background: linear-gradient(0deg, var(--hs-my-bg, rgba(26, 46, 56, .62)), rgba(14, 26, 32, .38));
-	border-top: 1px solid var(--hs-my-line, rgba(74, 132, 150, .45));
 }
 
 /* 场上随从的盒子 */
