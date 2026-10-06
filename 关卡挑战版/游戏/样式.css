@@ -342,11 +342,15 @@ body {
 }
 
 /* --- 桌面**分成两块**：上方敌方（预设样式）· 下方我方（可换样式）（用户 2026-10-06）----
-   两块是 `#hs-table` 里的两条"布带"（`.hs-band--*`，由 游戏/查找.js 建、绝对定位各占一半），
-   **不是** .board--* 自己的背景：棋盘盒子的位置一动，格子与卡片的落点就会跟着偏，
-   而布带只负责上色，几何一点不碰。
-     敌方：暗红绒布（将来固定成美术给的那套）        我方：走 --hs-my-bg / --hs-my-line 两个变量
-   （那两个变量由 外壳.js 的"我方布局样式"面板改写：预设样式与导入的样式文件都只改它们。） */
+   ★ 坐标系（这一版的关键，也是"不同窗口大小"的答案）：
+     牌桌按 **1208×720 的设计画布**排版，`#hs-stage` 整体等比缩放到窗口（fitStage），
+     所以**这里的每一段高度都写成"设计稿里那个位置"**，而不是"桌面的百分之多少" ——
+     后者与布局无关，窗口一变、视角一斜就会跟格子对不上（第一版写成 50%，于是红线
+     落到了我方布局位下面，把我方那排也盖住了）。
+     设计稿的分带（见本文件上面几段）：敌方英雄 0–18% · 敌方布局 20–36% ·
+     对峙区 36–44% · 我方布局 44–60% · 我方英雄 64–81% · 手牌 83–100%。
+     分界就取**对峙区的中点 40%**：上=敌方半场（0–40%），下=我方半场（40–100%）。
+     将来要在这儿摆件/贴美化素材，也走同一套设计稿百分比（见 #hs-props 的说明）。 */
 .hs-band--enemy,
 .hs-band--player {
 	position: absolute;
@@ -354,6 +358,48 @@ body {
 	right: 0;
 	pointer-events: none;      /* 只上色，绝不吃点击 */
 	z-index: 0;
+}
+
+.hs-band--enemy {
+	top: 0;
+	height: 40%;               /* ← 设计稿里的对峙线（不是我方/敌方各一半） */
+	background: linear-gradient(180deg, rgba(74, 22, 24, .62), rgba(58, 18, 20, .42));
+	border-bottom: 1px solid rgba(150, 62, 58, .5);
+}
+
+.hs-band--player {
+	bottom: 0;
+	height: 60%;
+	background: linear-gradient(0deg, var(--hs-my-bg, rgba(26, 46, 56, .62)), rgba(14, 26, 32, .40));
+	border-top: 1px solid var(--hs-my-line, rgba(74, 132, 150, .5));
+}
+
+/* --- 摆件层（用户要往桌面上放摆件与美化素材）-----------------------------------------
+   两层，按"要不要跟着桌面一起倾斜"选：
+     #hs-props      在 #hs-table 里 → **随桌面倾斜**（贴在桌面上：桌布纹样、卡垫、桌边装饰）
+     #hs-props-flat 在 #game 里    → **不倾斜**（悬浮在牌桌上：台灯、边框、角落花纹）
+   两者都是 **1208×720 设计稿的坐标**：`left/top/width/height` 用 % 就是设计稿的百分比，
+   所以窗口大小、视角（平铺/立体）都不会让摆件跑偏 —— 摆件只需要给一次设计稿坐标。
+   它们都 `pointer-events:none`：摆件永远不参与点击（我们吃过"全屏画布吞点击"的亏）。 */
+#hs-props,
+#hs-props-flat {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 3;
+}
+
+#hs-props-flat { z-index: 4; }
+
+/* 一件摆件：位置与尺寸都由行内样式给（设计稿的 %），这里只兜住"别溢出容器" */
+.hs-prop {
+	position: absolute;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: contain;
 }
 
 .hs-band--enemy {

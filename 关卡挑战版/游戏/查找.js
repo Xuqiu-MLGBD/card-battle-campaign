@@ -114,7 +114,50 @@
         下.className = 'hs-band--player';
         t2.appendChild(下);
       }
+      /* 两层摆件层（见 游戏/样式.css 顶部的说明）：
+         #hs-props 随桌面倾斜、#hs-props-flat 不倾斜；摆件一律用设计稿百分比定位。 */
+      if (!查('#hs-table #hs-props')) {
+        var 摆 = d.createElement('div');
+        摆.id = 'hs-props';
+        t2.appendChild(摆);
+      }
+      var g2 = 查('#game');
+      if (g2 && !查('#game > #hs-props-flat')) {
+        var 摆平 = d.createElement('div');
+        摆平.id = 'hs-props-flat';
+        g2.appendChild(摆平);
+      }
     })();
+
+    /* ★ 摆件 API（给将来的美术素材用）：坐标**一律是设计稿 1208×720 的百分比**。
+       例：HS_PROPS.放({ 层:'平', 名:'台灯', at:[6,4], 尺寸:[14,10], 图:'素材/台灯.png' })
+       `层`：'桌' = 随桌面倾斜（贴桌面）、'平' = 不倾斜（悬浮）。
+       为什么只收百分比：窗口大小与视角都不该让摆件跑偏 —— 摆件只给一次设计稿坐标。 */
+    W.HS_PROPS = {
+      放: function (项) {
+        项 = 项 || {};
+        var 层 = (项.层 === '桌') ? 查('#hs-table #hs-props') : 查('#game > #hs-props-flat');
+        if (!层) return null;
+        var e = d.createElement('div');
+        e.className = 'hs-prop';
+        if (项.名) e.setAttribute('data-prop', 项.名);
+        var at = 项.at || [0, 0], 尺 = 项.尺寸 || null;
+        e.style.left = at[0] + '%';
+        e.style.top = at[1] + '%';
+        if (尺) { e.style.width = 尺[0] + '%'; e.style.height = 尺[1] + '%'; }
+        if (项.图) e.style.backgroundImage = 'url("' + 项.图 + '")';
+        if (项.文字) e.textContent = 项.文字;
+        if (项.还) for (var k in 项.还) if (项.还.hasOwnProperty(k)) e.style[k] = 项.还[k];
+        层.appendChild(e);
+        return e;
+      },
+      清: function () {
+        ['#hs-table #hs-props', '#game > #hs-props-flat'].forEach(function (sel) {
+          var 层 = 查(sel);
+          if (层) while (层.firstChild) 层.removeChild(层.firstChild);
+        });
+      }
+    };
 
     /* ★ 清掉 `#game` 里的**裸文字**（用户 2026-10-06："对局页面左上角有 `V>` 的字符残留"）。
        来源：上游骨架里 `#game` 标签**内部**写了两个字（`v>`）—— 它不属于任何子元素、也没人管它，
