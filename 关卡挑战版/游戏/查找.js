@@ -117,18 +117,25 @@
         var 布上 = 查('#hs-table .hs-band--enemy'), 布下 = 查('#hs-table .hs-band--player');
         var 敌行 = 查('#hs-slots-enemy'), 我排 = 查('#hs-slots-player'), 桌 = 查('#hs-table');
         if (!布上 || !布下 || !敌行 || !我排 || !桌) return;
-        var H = 桌.offsetHeight; if (!H) return;
+        var H = 桌.offsetHeight, Wd = 桌.offsetWidth; if (!H) return;
         var 敌顶 = 敌行.offsetTop, 敌高 = 敌行.offsetHeight;
         var 我顶 = 我排.offsetTop, 我高 = 我排.offsetHeight;
-        var 线 = Math.round((敌顶 + 敌高 + 我顶) / 2);      // 两排之间的中线
-        var 垫 = Math.round(H * 0.015);
-        var 顶 = Math.max(0, 敌顶 - 垫), 底 = Math.min(H, 我顶 + 我高 + 垫);
-        var 键 = [顶, 线, 底].join(',');
+        var 线 = Math.round((敌顶 + 敌高 + 我顶) / 2);      // 两排之间的中线：两块的分界
+        /* ★ 方案 B（用户 2026-10-06 选定）：色块 = **整张桌面**上下各一半，不是"两排格子那一条带"。
+              · 立体视角：桌面 = 旧桌布那一圈（-2% / -14% / 104% / 108%）→ 看起来才是"整张桌子分成两半"；
+              · 平铺视角：桌面就是牌桌本身（0…100%）→ 不外扩，免得溢出到屏幕外（那是上一版的毛病）。
+           分界线两种情况都用**两排之间的中线** —— 它按布局现算，换视角/换部署位都会跟上。 */
+        var 立体 = /view-tilt/.test(((查('#game') || {}).className) || '');
+        var 左 = 立体 ? Math.round(-0.02 * Wd) : 0;
+        var 宽 = 立体 ? Math.round(1.04 * Wd) : Wd;
+        var 顶 = 立体 ? Math.round(-0.14 * H) : 0;
+        var 底 = 立体 ? Math.round(1.08 * H) : H;
+        var 键 = [左, 宽, 顶, 线, 底].join(',');
         if (布上.__hsKey === 键) return;                   // 没变就不写（省得每 0.8s 触发一次重排）
         布上.__hsKey = 键;
-        布上.style.left = '0'; 布上.style.width = '100%';
+        布上.style.left = 左 + 'px'; 布上.style.width = 宽 + 'px';
         布上.style.top = 顶 + 'px'; 布上.style.height = Math.max(1, 线 - 顶) + 'px';
-        布下.style.left = '0'; 布下.style.width = '100%';
+        布下.style.left = 左 + 'px'; 布下.style.width = 宽 + 'px';
         布下.style.top = 线 + 'px'; 布下.style.height = Math.max(1, 底 - 线) + 'px';
       }
       var 桌0 = 查('#hs-table');
