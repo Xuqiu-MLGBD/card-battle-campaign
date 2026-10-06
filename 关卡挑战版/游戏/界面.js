@@ -68,9 +68,12 @@
   function 可用高() { return 要转屏() ? W.innerWidth : W.innerHeight; }
 
   function targetH() {
-    var 宽 = 可用宽() || 1, 高 = 可用高() || 1;
-    var h = 高 / (宽 / DESIGN_W);
-    return Math.max(H_MIN, Math.min(h, H_MAX));
+    /* ★ 画布高**固定为设计稿的 720**（用户 2026-10-06："把整个桌面的比例和位置固定死"）。
+       原来这里按窗口宽高比算：h = 可用高 / (可用宽/1208) —— 于是**舞台高度随窗口漂**，
+       而所有布局都是按设计稿百分比写的（分块、布局位、将来的摆件），高度一漂就全对不上
+       （实测 2048 宽的窗口里，40% 那条分界线跑到了 55% 的位置、盖住我方布局位）。
+       钉死之后：舞台永远是 1208×720 的设计画布，窗口只负责"缩放与留边"。 */
+    return DESIGN_H;
   }
 
   /* 格子尺寸：**宽定死、高按 251:207 的宽高比推**（用户 2026-10-02：
@@ -104,7 +107,9 @@
     g.style.setProperty('--hs-mana-h', manaH + 'px');
     g.style.setProperty('--hs-mana-top', Math.max(8, Math.round(fieldBottom - manaH)) + 'px');
     var 转 = 要转屏();
-    var k = Math.min(可用宽() / DESIGN_W, 可用高() / h);
+    /* ⚠ 只允许**缩小**，永不放大（用户 2026-10-06）。放大 = 布局随窗口变、字也发糊；
+       钉死 1:1，窗口更大就留边 —— 摆件/卡面/分块从此只需要一套设计稿坐标。 */
+    var k = Math.min(1, 可用宽() / DESIGN_W, 可用高() / h);
     g.style.transform = 'translate(-50%, -50%)' + (转 ? ' rotate(90deg)' : '') + ' scale(' + k + ')';
     /* ★ 把这一拍的几何**记在元素上**，给 `toDesign()` 做逆变换用（2026-10-06）。
        为什么不能像以前那样"读 rect 反推"：旋转之后 `getBoundingClientRect()` 拿到的是**旋转后的外接矩形**，
@@ -130,7 +135,7 @@
     if (!g) return;
     var r = g.getBoundingClientRect();
     var h = targetH();
-    var k = Math.min(W.innerWidth / DESIGN_W, W.innerHeight / h);
+    var k = Math.min(1, W.innerWidth / DESIGN_W, W.innerHeight / h);   // 同上：只缩不放
     if (Math.abs(r.width / DESIGN_W - k) > 0.005) fitStage();
   }
 
