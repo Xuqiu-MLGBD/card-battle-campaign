@@ -353,6 +353,10 @@ body {
      将来要在这儿摆件/贴美化素材，也走同一套设计稿百分比（见 #hs-props 的说明）。 */
 .hs-band--enemy,
 .hs-band--player {
+	/* ⚠ 这两条布带挂在 **#game（整个舞台）** 上，不是挂在 #hs-table 里（用户 2026-10-06）：
+	   挂桌面里就会跟着 rotateX 一起倾斜、而且只盖住那张桌子；挂舞台上则**铺满整屏**，
+	   平铺与立体两种视角看到的配色完全一致（立体模式不再有自己的红桌布）。
+	   百分比仍是设计稿的百分比（#game 就是 1208×720 的设计画布）。 */
 	position: absolute;
 	left: 0;
 	right: 0;
@@ -1547,7 +1551,10 @@ body {
 	height: 122%;
 	border-radius: 26px;
 	/* 桌布：近处略深、远处略亮，给倾斜的桌面一点体积感（不再是纯平的一块色） */
-	background: linear-gradient(0deg, var(--hs-table-near, #2c0816) 0%, var(--hs-table-far, #3d0f1f) 100%);
+	/* 桌布**中性深灰**（用户 2026-10-06）：原来这里是暗红渐变，立体视角一打开就跟
+	   "敌方半场"的红撞成一片、把两块配色搅浑。现在它只当一层中性底，
+	   两种视角看到的配色都由下面两条布带（.hs-band--*）决定。 */
+	background: linear-gradient(0deg, rgba(16,17,20,.72) 0%, rgba(24,26,30,.55) 100%);
 	transform: translateZ(-2px);
 	opacity: 0;
 	transition: opacity .45s linear;

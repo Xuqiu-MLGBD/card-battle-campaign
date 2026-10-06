@@ -104,15 +104,18 @@
     (function () {
       var t2 = 查('#hs-table');
       if (!t2) return;
-      if (!查('#hs-table .hs-band--enemy')) {
+      /* 布带挂在 **#game（整个舞台）** 上：铺满整屏、且不随桌面倾斜 ——
+         这样平铺与立体两种视角的配色完全一致（立体模式不再有自己那层红桌布）。 */
+      var g1 = 查('#game');
+      if (g1 && !查('#game > .hs-band--enemy')) {
         var 上 = d.createElement('div');
         上.className = 'hs-band--enemy';
-        t2.appendChild(上);
+        g1.appendChild(上);
       }
-      if (!查('#hs-table .hs-band--player')) {
+      if (g1 && !查('#game > .hs-band--player')) {
         var 下 = d.createElement('div');
         下.className = 'hs-band--player';
-        t2.appendChild(下);
+        g1.appendChild(下);
       }
       /* 两层摆件层（见 游戏/样式.css 顶部的说明）：
          #hs-props 随桌面倾斜、#hs-props-flat 不倾斜；摆件一律用设计稿百分比定位。 */
