@@ -64,6 +64,23 @@
     try { return (W.innerHeight > W.innerWidth) && (W.innerWidth <= 900); } catch (e) { return false; }
   }
   /* 转屏之后"可用的宽/高"要互换：设计画布的宽（1208）去对屏幕的**高**。 */
+  /* ---- 桌面缩放上限（用户 2026-10-06："窗口又有更大的宽、又有更大的高时，等比放大也可以"）----
+     语义：`k = min(可用宽/设计宽, 可用高/设计高, 上限)` ——
+       · 上限 = 0 → 不设上限（**适应窗口**，默认）：窗口够大就把整桌等比放大到刚好填满一边；
+       · 上限 = 1 → 等同"钉死 1×"（窗口更大就留边，控件 1:1）；
+       · 上限 = 1.5 / 2 → 最多放大到那个倍数。
+     上限**永远不会超过窗口**（min 里带着两个 fit 项），所以放大也只会等比、不会溢出、不会变形。 */
+  var 缩放键 = 'hs_stage_cap_v1';
+  function 读缩放上限() {
+    try { var v = parseFloat(W.localStorage.getItem(缩放键)); return isFinite(v) ? v : 0; } catch (e) { return 0; }
+  }
+  function 设缩放上限(v) {
+    try { W.localStorage.setItem(缩放键, String(v)); } catch (e) {}
+    fitStage();
+    return 读缩放上限();
+  }
+  function 缩放上限() { return 读缩放上限(); }
+
   function 可用宽() { return 要转屏() ? W.innerHeight : W.innerWidth; }
   function 可用高() { return 要转屏() ? W.innerWidth : W.innerHeight; }
 
@@ -107,9 +124,12 @@
     g.style.setProperty('--hs-mana-h', manaH + 'px');
     g.style.setProperty('--hs-mana-top', Math.max(8, Math.round(fieldBottom - manaH)) + 'px');
     var 转 = 要转屏();
-    /* ⚠ 只允许**缩小**，永不放大（用户 2026-10-06）。放大 = 布局随窗口变、字也发糊；
-       钉死 1:1，窗口更大就留边 —— 摆件/卡面/分块从此只需要一套设计稿坐标。 */
-    var k = Math.min(1, 可用宽() / DESIGN_W, 可用高() / h);
+    /* k = 等比适应窗口，再受"缩放上限"约束（见上面那段说明）：
+       上限 0 = 适应窗口（默认，窗口大就等比放大）；1 = 钉死原尺寸；1.5 / 2 = 最多放大到那个倍数。
+       两个 fit 项始终在 min 里，所以任何上限下都不会溢出窗口、也不会非等比变形。 */
+    var 上限 = 读缩放上限();
+    var k = Math.min(可用宽() / DESIGN_W, 可用高() / h);
+    if (上限 > 0) k = Math.min(k, 上限);
     g.style.transform = 'translate(-50%, -50%)' + (转 ? ' rotate(90deg)' : '') + ' scale(' + k + ')';
     /* ★ 把这一拍的几何**记在元素上**，给 `toDesign()` 做逆变换用（2026-10-06）。
        为什么不能像以前那样"读 rect 反推"：旋转之后 `getBoundingClientRect()` 拿到的是**旋转后的外接矩形**，
@@ -135,7 +155,9 @@
     if (!g) return;
     var r = g.getBoundingClientRect();
     var h = targetH();
-    var k = Math.min(1, W.innerWidth / DESIGN_W, W.innerHeight / h);   // 同上：只缩不放
+    var k = Math.min(W.innerWidth / DESIGN_W, W.innerHeight / h);
+    var 上限2 = 读缩放上限();
+    if (上限2 > 0) k = Math.min(k, 上限2);
     if (Math.abs(r.width / DESIGN_W - k) > 0.005) fitStage();
   }
 
@@ -3917,6 +3939,8 @@
     box.classList.add('on');
     return text;
   }
+
+  W.HS_STAGE_SCALE = { 读: 缩放上限, 设: 设缩放上限 };   // 设置面板的"桌面缩放"用它
 
   W.HS_INTERACT = {
     slotAt: slotAt, slotRect: slotRect, hotSlot: hotSlot, toDesign: toDesign,

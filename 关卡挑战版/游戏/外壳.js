@@ -738,6 +738,13 @@
       行1.appendChild(清);
       settingsEl.appendChild(行1);
 
+      settingsEl.appendChild(el('p', null, '桌面缩放（窗口更大时，整桌要不要跟着等比放大）'));
+      var 行缩 = el('div', 'hsx-row');
+      行缩.id = 'hsx-scale';
+      settingsEl.appendChild(行缩);
+      settingsEl.appendChild(el('p', 'hsx-note',
+        '缩放永远是**等比**的：要么整桌一起放大，要么整桌一起缩小，绝不会把格子拉变形（上限也不会超出窗口）。'));
+
       settingsEl.appendChild(el('p', null, '我方布局样式（只改对局里我方那一半的配色）'));
       var 行2 = el('div', 'hsx-row');
       行2.id = 'hsx-mystyles';
@@ -750,6 +757,7 @@
       settingsEl.appendChild(el('p', 'hsx-note', '进度存在浏览器本机（localStorage），清缓存即丢失。'));
     }
     渲染布局样式();
+    渲染缩放选项();
     settingsEl.classList.add('on');
   }
 
@@ -796,6 +804,24 @@
     存样式存档(存);
     return true;
   }
+  /* 桌面缩放：0 = 适应窗口（默认）· 1 = 原尺寸 · 1.5 / 2 = 最多放大到那个倍数 */
+  var 缩放档 = [[0, '适应窗口'], [1, '原尺寸 1×'], [1.5, '最多 1.5×'], [2, '最多 2×']];
+  function 渲染缩放选项() {
+    var d = W.document, 行 = d.getElementById('hsx-scale');
+    if (!行) return;
+    行.innerHTML = '';
+    var 当 = (W.HS_STAGE_SCALE && W.HS_STAGE_SCALE.读) ? W.HS_STAGE_SCALE.读() : 0;
+    缩放档.forEach(function (t) {
+      var b = el('button', 'hsx-btn' + (当 === t[0] ? ' on' : ''), t[1]);
+      b.onclick = function () {
+        if (W.HS_STAGE_SCALE && W.HS_STAGE_SCALE.设) W.HS_STAGE_SCALE.设(t[0]);
+        渲染缩放选项();
+        说一句('桌面缩放：' + t[1]);
+      };
+      行.appendChild(b);
+    });
+  }
+
   function 渲染布局样式() {
     var d = W.document, 行 = d.getElementById('hsx-mystyles');
     if (!行) return;
