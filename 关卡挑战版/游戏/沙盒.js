@@ -90,7 +90,12 @@
     var d = W.document;
     var 手 = d.getElementById('cards');
     if (手) while (手.firstChild) 手.removeChild(手.firstChild);
-    var 卡 = d.querySelectorAll('#game .cardinplay');
+    /* ⚠⚠ 只清**棋盘里**的单位（`.board .cardinplay`），不能写 `#game .cardinplay` ——
+       **双方英雄框本身就是 `<div class="cardinplay" id="playerhero">`**（上游的标记就是这样）。
+       写成宽的那版，换关清场会把两个英雄框**连根删掉**：症状是"没有双方玩家窗体"、
+       自检报 SKELETON_INCOMPLETE（缺 playerhero/opposinghero）、英雄框变成 0×0 空壳。
+       （2026-10-05 实测：清完 `.cardinplay` 总数为 0。） */
+    var 卡 = d.querySelectorAll('#game .board .cardinplay');
     for (var i = 卡.length - 1; i >= 0; i--) if (卡[i].parentNode) 卡[i].parentNode.removeChild(卡[i]);
     var 法力盒 = d.getElementById('manacontainer');
     if (法力盒) while (法力盒.firstChild) 法力盒.removeChild(法力盒.firstChild);
@@ -103,8 +108,6 @@
        （用户 2026-10-04 报的"卡死了"就是这个；样式里也已给它加了 pointer-events:none 兜底）。 */
     var 相位 = d.getElementById('computerTurn');
     if (相位) 相位.style.display = 'none';
-    var 技能 = d.getElementById('playerheropower');
-    if (技能) { 技能.style.boxShadow = 'none'; }
     /* 我们自己的**临时图层**一并复位：遮罩（渐变蒙版）/ 箭头 / 预览 / 提示条 / 结算条 / 演出图层。
        这几样都是"上一次操作留下的状态"，独立网页那条路靠整页重载清掉，页内重开必须自己清 ——
        用户 2026-10-04 报的"我的回合为什么会有遮罩"就是蒙版没清（跟"指示条盖住按钮""开始面板
@@ -210,13 +213,49 @@
   function 关闭() {
     if (!有SDK()) return false;
     try { if (W.sdk.stage.visible()) W.sdk.stage.close(); } catch (e) {}
+    舞台关了();                                   // 与平台关舞台走同一个收尾（见下）
+    return true;
+  }
+
+  /* 舞台"开着"的唯一判据（指南 §5.4：`stage.el()` 关着时**也返回节点**，不能拿节点判开关）。 */
+  function 舞台可见() { try { return 有SDK() && !!W.sdk.stage.visible(); } catch (e) { return false; } }
+
+  /* ★★ 关舞台的**唯一收尾**（2026-10-05 优化"退出舞台"）。
+     指南 §5.5 写得很明白：作者主动 `stage.close()` **不会**触发 `stage:close` 事件，
+     所以"我们那颗返回按钮"和"平台把舞台关掉（用户点了原生返回）"必须汇到**同一处**——
+     原来这里两条路各写各的（都只删返回条），也就没法在这一拍做"停下来"的事：
+       · 舞台关着的时候游戏还在跑，回来就是另一拍了（该走的时候走到哪，回来还是哪）；
+       · 顺手把在飞的演出跳到终态（`skip`），别让它挂在半路。 */
+  function 舞台关了() {
     返回条(false);
+    try { if (W.HS_PIPELINE && typeof W.HS_PIPELINE.skip === 'function') W.HS_PIPELINE.skip(); } catch (e) {}
+  }
+
+  /* ★ 重开/后续消息时的"确认"（指南 §5.2 的可重入初始化）：
+     平台可能**自己**把舞台打开（原生页那个"打开同层页"入口），那一拍我们只做两件该做的事 ——
+     确认根还挂在舞台里、把返回条补回来；**不**调 `stage.open()`（§5.3：不许抢用户刚关掉的舞台）。 */
+  function 确认舞台() {
+    if (!舞台可见()) return false;
+    if (根) 搬进舞台();
+    /* ★ 顺手把根的 `display` 重新断言一次（2026-10-06）。
+       `建根` 会把根设成 `display:none`（"舞台外先藏着"），此后由 `搬进舞台()` 恢复成 block ——
+       但**平台/夹具自己那一拍**也可能把它设回 none（假舞台的初始化就是这样，实测出现过：
+       `stage.visible()` 为真、根却 `display:none`，于是 `#game` 量出来 0×0、自检 ① 红）。
+       这条**不改开关语义**（开关只看 `stage.visible()`），只是"既然认为开着，就把显示补上"。 */
+    try { if (根 && 根.style) 根.style.display = 'block'; } catch (e) {}
+    返回条(true);
     return true;
   }
 
   /* 舞台里的"返回原生界面"：平台原生页保留着打开同层页的入口，我们只负责关掉自己这一层。
      ⚠ 作者主动 `stage.close()` **不会**触发 `stage:close` 事件，所以暂停/状态更新两条路共用同一个函数。 */
   function 返回条(显示) {
+    /* ★ 2026-10-06 用户要求：「把返回原生界面放在设置里」——
+       原来这里在舞台**左上角**挂一条常驻小条（`#hs-backbar`），既占地方又和法力管挤在一起。
+       现在这一层**不再自己建条**：入口挪进设置抽屉（index.html 的 `#backnativebutton`，
+       由 游戏/菜单.js 接到 `HS_SANDBOX.关闭()`）。函数保留成空操作，免得别处调用点报错，
+       也方便将来想回退（把下面这几行恢复即可）。 */
+    if (1) return;
     if (!根) return;
     var 条 = 根.querySelector('#hs-backbar');
     if (!显示) { if (条) 条.remove(); return; }
@@ -365,7 +404,7 @@
       } catch (e) { return false; }
     })();
     if (!在局里) return 坏;
-    [['#endturn', '结束回合'], ['#hs-settings', '设置'], ['#hs-back-native', '返回原生界面']].forEach(function (t) {
+    [['#endturn', '结束回合'], ['#hs-settings', '设置'], ['#backnativebutton', '返回原生界面（在设置里）']].forEach(function (t) {
       var el = (W.HS_UI_找 ? W.HS_UI_找(t[0]) : d.querySelector(t[0]));
       if (!el) { 坏.push(t[1] + '：找不到元素'); return; }
       var r = el.getBoundingClientRect();
@@ -420,8 +459,16 @@
       内容 = (W.HS_UI_找id ? W.HS_UI_找id('contents') : d.getElementById('contents'));
     } catch (e) { return false; }
     if (!内容) return false;
+    /* ★★ 判据从"手牌有牌"改成"**真的在局里**"（2026-10-06 修"导入后自动跳进空对局"）。
+       原来拿手牌非空当"局开了"—— 那是"直接进关卡"时代的判据。现在 `游戏/回合.js`
+       只在"要在局里"时才发牌，可这条兜底一旦在**别的时机**看到手上有牌（例如将来有人先发牌再进局、
+       或页内换关的中途），就会把牌桌亮出来、把主页面藏掉，表现得像"自动跳进一个空对局"，
+       同时主页面残留还露着 → 检错报 UI_MODAL_OVER_GAME。
+       真正的"在局里"只有一个来源：`外壳.js` 的 `enterFight()` 会置 `W.isInGame = true`。 */
+    var 在局里 = false;
+    try { 在局里 = (W.isInGame === true); } catch (e) {}
+    if (!在局里) return false;                            // 不在局里：不动（这是"在主页面"的正常状态）
     var 有牌 = !!(牌 && 牌.childElementCount > 0);
-    if (!有牌) return false;                              // 还没开局：不动（这是"在主页面"的正常状态）
     var 现在已经看得见 = false;
     try { 现在已经看得见 = getComputedStyle(内容).visibility !== 'hidden'; } catch (e) {}
     if (现在已经看得见) return false;
@@ -458,6 +505,7 @@
        主页面不会建、上游那个 Play/Tutorial 菜单也不会隐藏（真机上就是"怎么是旧页面"）。 */
     try { if (typeof W.CAMPAIGN_BOOT === 'function') W.CAMPAIGN_BOOT(); } catch (e) { 喊('warn', ['[沙盒] 引导失败：', e]); }
     if (!已开过) 打开(W.HS_SANDBOX.模式);        // 首屏给一次机会，之后不再抢舞台
+    else 确认舞台();                            // 已经开过：平台若已把舞台打开，就只确认根与返回条
     存档();
     /* 挂载后延迟一拍：① 局要是开起来了，就把牌桌摆出来（见 摆出牌桌 那段）；
        ② 再跑"可点性 + 可见错误条"。
@@ -488,6 +536,8 @@
     关闭: 关闭,
     重开一局: 重开一局,
     关面板: 关面板,                              // 检错层的"回到安全节点"要用（界面登记恢复时调它）
+    舞台可见: 舞台可见,                          // 判"舞台开着"只看这个（§5.4）
+    确认舞台: 确认舞台,                          // 重开/后续消息时确认根与返回条（不抢舞台）
     读档: 读档,
     存档: 存档,
     模式: 'full'                                 // 打游戏要整屏；想"边聊边玩"就改成 'content'
@@ -496,7 +546,8 @@
   if (有SDK()) {
     读档();                                     // 在 外壳.js 之前把云端进度落到 localStorage
     try { W.sdk.on('message:mount', 启动); } catch (e) { 喊('warn', ['[沙盒] message:mount 订阅失败：', e]); }
-    try { W.sdk.on('message:done', function () { if (根) 存档(); }); } catch (e) {}
-    try { W.sdk.on('stage:close', function () { 返回条(false); }); } catch (e) {}
+    try { W.sdk.on('message:done', function () { if (根) 存档(); 确认舞台(); }); } catch (e) {}
+    /* 平台把舞台关掉 → 走同一套收尾（§5.5） */
+    try { W.sdk.on('stage:close', function () { 舞台关了(); }); } catch (e) {}
   }
 })(typeof window !== 'undefined' ? window : globalThis);

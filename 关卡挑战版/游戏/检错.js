@@ -171,7 +171,9 @@
         出.我们画布 = (dp === 'none');
       }
       /* 样式没生效的典型长相：几个"整页容器"同时外露（正常时最多只有一个，且不该是菜单类）。 */
-      ['optionsmenu', 'tutorialmenu', 'shopmenu', 'victory', 'howtoplay'].forEach(function (id) {
+      // 2026-10-05：Options / Shop / Tutorial / 上游主菜单 / 开包层 已从 index.html 删除，
+      // 这里只留还存在的两个（`#load` 是载入层、`#mainmenu` 已删）—— 少了它们就别再列。
+      ['load', 'concedebutton'].forEach(function (id) {
         var e = d.getElementById && d.getElementById(id);
         if (!e || typeof g !== 'function') return;
         var dp = '';

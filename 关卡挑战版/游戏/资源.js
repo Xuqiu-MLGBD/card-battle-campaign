@@ -164,67 +164,13 @@
     return null;
   }
 
-  /* ---------------------------------------------------------------- 回合接管 */
-  var 上游playerTurn = W.playerTurn;
-  var 上游placeCardFunc = W.placeCardFunc;
-
-  if (typeof 上游playerTurn === 'function') {
-    W.playerTurn = function () {
-      /* ① 先按**我们的**规则结算"回合开始判断"：上限 +1（夹 10）、法力回满。
-         然后把全局量摆成"上游自增一步之后正好等于我们的上限"。 */
-      var 前上限 = 态.上限;
-      var 目标 = 夹(态.上限 + 1, 0, 顶尖);
-      态.回合 += 1;
-      态.上限 = 目标;
-      态.法力 = 目标;
-      W.manaCapacity = 目标 - 1;                 // 上游会 ++
-      W.mana = 0;                                // 上游会写成 manaCapacity
-      var 库前 = 牌库数组();
-      var 手前 = 手牌数();
-
-      var out = 上游playerTurn.apply(this, arguments);
-
-      /* ② 对账 + 补偿 + 重画 */
-      var 后 = 核对('回合开始');
-      补回被吞的抽牌(库前, 手前);
-      渲染法力();
-      记('回合 ' + 态.回合 + ' 开始：上限 +1（' + 前上限 + ' → ' + 目标 + '），法力回满 ' + 后.法力);
-      return out;
-    };
-    W.playerTurn.__hsOurs = true;
-  } else {
-    喊('error', ['[资源] 找不到上游 playerTurn —— 资源层没接上']);
-  }
-
-  if (typeof 上游placeCardFunc === 'function') {
-    W.placeCardFunc = function () {
-      /* 出牌扣费是上游干的（`mana -= manaCost`），我们做两件事：
-         ① **出不起就别让它扣**（我们的真相说了算，和界面那层各守一道）；
-         ② 扣完采纳结果、重画一遍法力（水晶颜色按真实法力，上游那份是坏的）。 */
-      var 费 = null;
-      try {
-        var 名 = W.getNameOfElement;
-        var 表 = W.HS_CARDS || {};
-        if (名 && 表[名]) 费 = 表[名].费;
-      } catch (e) { /* 认不出是哪张卡就让上游照旧扣 */ }
-      if (是数(费) && 态.法力 < 费) {
-        记('出不起：' + W.getNameOfElement + ' 要 ' + 费 + '，只有 ' + 态.法力);
-        return false;
-      }
-      var out = 上游placeCardFunc.apply(this, arguments);
-      核对('出牌');
-      渲染法力();
-      /* ★ 上游的扣费是**异步**的：它的函数体把 `mana -= manaCost` 包在
-         `setTimeout(function(){…}, 0.01)` 里 —— 上面这两行跑的时候它还没扣。
-         所以隔一拍再对一次账、再画一遍（0.01ms 的那个定时器早就跑完了）。
-         不做这一步的现场症状：`#mana` 文字已经是 0/1，水晶却还是亮的。 */
-      if (W.setTimeout) W.setTimeout(function () { 核对('出牌(异步)'); 渲染法力(); }, 80);
-      return out;
-    };
-    W.placeCardFunc.__hsOurs = true;
-  } else {
-    喊('error', ['[资源] 找不到上游 placeCardFunc —— 资源层没接上']);
-  }
+  /* ---------------------------------------------------------------- 回合：**已交出去**
+     2026-10-05（去上游）：这里原来包着上游的 `playerTurn`（"先把全局量摆成上限−1、让它自增一步"）
+     与 `placeCardFunc`。现在回合与落场都由 `游戏/回合.js` 自己实现，那两个包装**必须卸掉** ——
+     留着会双重计算（它的"预设上限"会被我们的 +1 覆盖，一回合涨两点法力）。
+     本层从此只做一件事：**持有法力/上限/回合号这个真相**，由 `游戏/回合.js` 通过下面的出口驱动。
+     牌库与手牌的补偿（"手牌满时上游无条件 shift 会静默丢牌"）也随上游一起作废 ——
+     我们的 `抽一张` 在满手时就是直接不抽。 */
 
   /* ---------------------------------------------------------------- 对外出口 */
   W.HS_RESOURCE = {
@@ -248,7 +194,7 @@
     核对: 核对,
     历史: function () { return 态.账.slice(); },
     最近: function (n) { return 态.账.slice(-(n || 5)); },
-    是不是我们的: function () { return !!(W.playerTurn && W.playerTurn.__hsOurs); }
+    是不是我们的: function () { return !!(W.HS_TURN && typeof W.HS_TURN.我方回合开始 === 'function'); }
   };
 
   /* 开局先画一遍：上游那份 `updateManaGUI` 是坏的（靠一个被遮蔽的 `manaCost` 全局上色），

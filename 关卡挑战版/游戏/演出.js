@@ -127,15 +127,30 @@
   /* 演出层：一整块覆盖视口、不吃鼠标的图层。挂 body 上 → 和 #game 的缩放、
      倾斜都无关，坐标永远是屏幕坐标。 */
   var fx = null;
+
+  /* ★ 覆盖层的**宿主**（2026-10-05）：优先"本作品的根节点"（沙盒是 `#hs-sandbox-root`），
+     独立网页才落 `document.body`。
+     为什么非改不可（沙盒同层卡指南 §5.4：「所有内容挂在本作品根节点」）：
+       沙盒的舞台根 `z-index` 是 2147483000，而演出层原来挂在 `document.body` ——
+       它是舞台根的**兄弟且层级更低**，而舞台里 `#game` 有一层不透明底色铺满整屏，
+       于是演出层**画在了底色下面**：元素在、样式对、`getBoundingClientRect` 也对，
+       但**玩家一个都看不见**（用户 2026-10-05："各阶段提示词、抽牌、执行、出牌提示都没展示"）。
+       挂进根节点后它与 `#game` 同处一个层叠上下文，`z-index`（演出层 160 / 提示条 9998）才真正生效。 */
+  function 覆盖宿主() {
+    try { if (W.HS_UI_根 && typeof W.HS_UI_根 === 'function') { var r = W.HS_UI_根(); if (r) return r; } } catch (e) {}
+    return d.body || null;
+  }
+
   function layer() {
-    if (fx && d.body && fx.parentNode === d.body) return fx;
-    if (!d.body) return null;
+    var 宿主 = 覆盖宿主();
+    if (!宿主) return null;
+    if (fx && fx.parentNode === 宿主) return fx;
     fx = d.getElementById('hs-fx');
     if (!fx) {
       fx = d.createElement('div');
       fx.id = 'hs-fx';
-      d.body.appendChild(fx);
     }
+    if (fx.parentNode !== 宿主) 宿主.appendChild(fx);      // 换过宿主（先建在 body、后来进了沙盒根）就搬过去
     return fx;
   }
 
@@ -398,7 +413,10 @@
 
   function healthSnapshot() {
     var out = {};
-    var nodes = d.querySelectorAll('.cardinplay');
+    /* ⚠ 只取**棋盘里**的单位：英雄框（`#playerhero` / `#opposinghero`）也带 `cardinplay` 类，
+       收进来会让快照里多出 `playerhero` 这种"假单位"，于是对账报"player.英雄血 不一致"
+       （2026-10-05 实测就是这个）。 */
+    var nodes = d.querySelectorAll('.board .cardinplay');
     for (var i = 0; i < nodes.length; i++) {
       /* ⚠ 排除**退场克隆体**（它保留 cardinplay 类、没有 id）——
          不排掉的话，一张卡的死亡会往快照里塞一个 `anonN: "-2"` 这样的鬼影（实测过），

@@ -56,8 +56,20 @@
      高度仍夹在 [H_MIN, H_MAX]：太扁两排会挤在一起，太高中间会空成一片。
      超出这个范围（比如超宽屏）才会回到留边，这是刻意的兜底。 */
   /* 当前窗口下「应该」用的设计高度 —— fitStage 与 ensureFit 共用这一份算式 */
+  /* 要不要**把整个舞台转 90° 当横屏用**（用户 2026-10-06：
+     「如果监测到显示屏幕的宽度是手机设备，那直接将整个舞台旋转 90 度进入横屏模式」）。
+     判据两条同时成立才算：① 竖着（高 > 宽）；② 宽度是手机那一档（≤ 900）——
+     这样平板上"竖着拿"不会突然转过去，而手机上竖着拿就自动变成一屏横屏擂台。 */
+  function 要转屏() {
+    try { return (W.innerHeight > W.innerWidth) && (W.innerWidth <= 900); } catch (e) { return false; }
+  }
+  /* 转屏之后"可用的宽/高"要互换：设计画布的宽（1208）去对屏幕的**高**。 */
+  function 可用宽() { return 要转屏() ? W.innerHeight : W.innerWidth; }
+  function 可用高() { return 要转屏() ? W.innerWidth : W.innerHeight; }
+
   function targetH() {
-    var h = W.innerHeight / (W.innerWidth / DESIGN_W);
+    var 宽 = 可用宽() || 1, 高 = 可用高() || 1;
+    var h = 高 / (宽 / DESIGN_W);
     return Math.max(H_MIN, Math.min(h, H_MAX));
   }
 
@@ -91,8 +103,21 @@
     var manaH = Math.round(Math.max(200, Math.min(h * 0.55, 440)));
     g.style.setProperty('--hs-mana-h', manaH + 'px');
     g.style.setProperty('--hs-mana-top', Math.max(8, Math.round(fieldBottom - manaH)) + 'px');
-    var k = Math.min(W.innerWidth / DESIGN_W, W.innerHeight / h);
-    g.style.transform = 'translate(-50%, -50%) scale(' + k + ')';
+    var 转 = 要转屏();
+    var k = Math.min(可用宽() / DESIGN_W, 可用高() / h);
+    g.style.transform = 'translate(-50%, -50%)' + (转 ? ' rotate(90deg)' : '') + ' scale(' + k + ')';
+    /* ★ 把这一拍的几何**记在元素上**，给 `toDesign()` 做逆变换用（2026-10-06）。
+       为什么不能像以前那样"读 rect 反推"：旋转之后 `getBoundingClientRect()` 拿到的是**旋转后的外接矩形**，
+       由它反推出来的 k 与原点都是错的（指针→设计坐标会整体偏掉）。这里存的是**唯一真相**：
+       设计宽高、缩放、是否转过 90°。 */
+    g.__hsFit = { k: k, 转: 转, 宽: DESIGN_W, 高: h };
+    /* ★ 把缩放值暴露成 CSS 变量（2026-10-05）。为什么需要：
+       整个舞台是一张被 `scale(k)` 缩放的设计画布 —— 里面的文字是"先按设计字号光栅化、再被放大 k 倍"，
+       k 不是整数时**每个字都会糊**（用户："设置按钮、视角按钮的分辨率好模糊"；实测 k=1.024、dpr=1）。
+       右栏那几个 chrome 元素用这个变量做**反向缩放**（`scale(1/k)`），让它们按 1:1 光栅化 —— 字就实了。
+       画布上也写一份，方便将来舞台外的元素复用同一个口径。 */
+    g.style.setProperty('--hs-stage-k', String(k));
+    try { if (d.documentElement) d.documentElement.style.setProperty('--hs-stage-k', String(k)); } catch (e) {}
   }
 
   /* 自愈：每次鼠标按下去之前对一下 —— 如果舞台的实际缩放和当前窗口该有的缩放不一致，
@@ -111,12 +136,24 @@
 
   /* 视口坐标 → 设计坐标。舞台被 scale 过，事件里的 clientX/Y 必须先换算
      才能拿去和设计坐标比较（箭头就画在设计坐标里）。 */
+  /* 屏幕坐标 → 设计坐标。**两种情况分开算**（2026-10-06 加转屏支持）：
+     · 不转：舞台的布局盒 Wd×Hd 被 `left/top:50% + translate(-50%,-50%)` 钉在屏幕正中，
+       所以 `screen = 屏幕中心 + ((设计坐标 − 盒中心) × k)`；
+     · 转 90°：多一层顺时针旋转，本地偏移 (dx,dy) → (−dy, dx)，于是
+       `screen = (中心x − (y − Hd/2)·k, 中心y + (x − Wd/2)·k)`。
+     ⚠ 别用 `getBoundingClientRect()` 反推 —— 旋转后它给的是**外接矩形**，k 与原点都错（见 fitStage 的 __hsFit）。 */
   function toDesign(clientX, clientY) {
     var g = stage();
     if (!g) return { x: clientX, y: clientY };
-    var r = g.getBoundingClientRect();
-    var k = r.width / DESIGN_W || 1;
-    return { x: (clientX - r.left) / k, y: (clientY - r.top) / k };
+    var f = g.__hsFit;
+    if (!f) {                                    // 兜底：还没 fit 过（启动最初那一拍）→ 退回旧算法
+      var r0 = g.getBoundingClientRect();
+      var k0 = r0.width / DESIGN_W || 1;
+      return { x: (clientX - r0.left) / k0, y: (clientY - r0.top) / k0 };
+    }
+    var cx = (W.innerWidth || 0) / 2, cy = (W.innerHeight || 0) / 2;
+    if (!f.转) return { x: (clientX - cx) / f.k + f.宽 / 2, y: (clientY - cy) / f.k + f.高 / 2 };
+    return { x: (clientY - cy) / f.k + f.宽 / 2, y: -(clientX - cx) / f.k + f.高 / 2 };
   }
 
   /* ==================== 权威状态（改进 B）：取值器 + 画笔 + 提交点 ====================
@@ -316,6 +353,31 @@
   var 手牌上限 = 10;                 // 与引擎的「手牌上限」保持一致
   var 最小步距 = 40;
 
+  /* 手牌「出得起 / 出不起」：给边框染色（行内样式，`样式.css:358` 那条约定保留）。
+     这份活儿原来是上游 `checkForRequiredMana()` 干的（它在 index.js 里，读的是自己的 `mana`）——
+     2026-10-05 起我们出牌不再经过它，所以这里接手。
+     **判定读资源层那个数**（与出牌校验同一个来源），不会再出现"显示能出、点了说不够"。
+     故意**不写 `pointer-events`**：我们的拖拽是捕获阶段按坐标算的，把卡设成不吃指针
+     会让它连拖都拖不起来 —— 出不起时给一句说法（见出牌那段的 INSUFFICIENT_MANA）比变成死卡好。 */
+  function 刷可出性() {
+    var box = d.getElementById('cards');
+    if (!box) return 0;
+    var 有 = (W.HS_RESOURCE && typeof W.HS_RESOURCE.法力 === 'function')
+      ? Number(W.HS_RESOURCE.法力()) : Number(W.mana);
+    var 张 = box.querySelectorAll(':scope > .card');
+    var 能出 = 0;
+    for (var i = 0; i < 张.length; i++) {
+      var c = readCard(张[i]);
+      var 费 = c ? Number(c.mana) : NaN;
+      var ok = isFinite(费) && (有 >= 费);
+      if (ok) 能出++;
+      var 脸 = 张[i].children[0];
+      var 边 = 脸 && 脸.children[4];
+      if (边) 边.style.border = ok ? 'solid 4px #0FCC00' : 'solid 4px rgb(56, 56, 56)';
+    }
+    return 能出;
+  }
+
   function 排手牌() {
     var box = d.getElementById('cards');
     if (!box) return 0;
@@ -330,6 +392,8 @@
     for (var i = 0; i < n; i++) {
       张[i].style.marginLeft = (i === 0) ? '0px' : (步距 - 卡宽) + 'px';
     }
+    /* 手牌一变就顺带刷一次"出得起"（抽牌、出牌、开局发牌都走这里，不靠谁记得调） */
+    刷可出性();
     return 步距;
   }
 
@@ -561,7 +625,7 @@
             var 导 = d.createElement('button'); 导.className = 'campaign-btn'; 导.textContent = '导出本局信息';
             导.onclick = function () { try { showReport(); } catch (e) {} };
             bar.appendChild(导);
-            d.body.appendChild(bar);
+            ((W.HS_UI_宿主 && W.HS_UI_宿主()) || d.body).appendChild(bar);
           }
           bar.querySelector('span').textContent = '牌桌出了点问题（' + 条.码 + '），已暂停';
           bar.classList.add('on');
@@ -574,9 +638,32 @@
        于是 ours.css 里给它们写的设计坐标（x≈1014）在未缩放的空间里等于 1014px，
        直接落到视口外面去了（实测 rect.left = 1014 > 视口宽 900）。
        搬进来之后它们才和舞台一起缩放。（上游都按 id 取它们，搬家不影响。） */
-    ['playerlabel', 'playerclasslabel', 'opponentlabel', 'vs'].forEach(function (id) {
+    /* ⚠ 2026-10-05：这里原来把 `#playerlabel` / `#playerclasslabel` / `#opponentlabel` / `#vs`
+       搬进 `#game`（给右栏那两个头像框当标题）。**那四个元素已从 index.html 删除**
+       （用户："左上角还有玩家 vs 对方的字样，那个没有存在必要，删除"），所以这一段一起删掉 ——
+       留着一份"往不存在的元素上搬家"的代码，只会让人以为标记里还有。 */
+
+    /* ★★ 2026-10-05：**结束回合按钮与双方英雄框也搬进来**。这一步修的是"卡牌预览被它们压住"。
+       它们（含英雄血量数字）原本是 `#contents` 的直接子节点，而 `#game` 有自己的**层叠上下文**
+       （`transform` 会新建一个）—— 于是 `#hs-preview` 那个 `z-index:200` 只能在自己那个上下文
+       里赢，**永远压不过上下文之外的兄弟**（实测：预览正中命中是 `#endturn`）。
+       搬进来之后三件事一起对了：① 层叠可比（预览 200 > 它们）；② 跟着舞台一起缩放
+       （留在 `#contents` 里的话，舞台缩放≠1 时它们会和右栏错位）；③ 与右栏同一个坐标系。 */
+    /* ⚠⚠ 这两样**也必须搬进来**（2026-10-05 实测，和上面同一个坑的两副面孔）：
+       `#cards`（手牌区，`z-index:9`）与 `#mana`（法力数字）原本是 `#contents` 的直接子节点，
+       而 `#game` 有自己的层叠上下文（有 transform）——
+         · **层叠**：`#cards` 的 9 是去跟"整个 `#game`（z=auto）"比大小的，于是**手牌永远画在右栏之上**
+           （自检 ㉚ 报的"任务区 ← 被 cards 盖住"就是这个，右栏抬到 12 也没用：12 只在 `#game` 里面算数）；
+         · **缩放**：它们在舞台**外面**，所以**不随舞台缩放** —— 小视口下实测手牌区宽 965px 而舞台只有 844px，
+           比舞台还宽；法力数字也会和管身错位。
+       搬进来之后两者都归位：坐标按**设计画布**算（这正是 样式.css 里写 965px / 设计坐标的本意），
+       层叠也在同一个上下文里比（预览 200 > 右栏 12 > 手牌 9 > 棋盘）。 */
+    ['endturn', 'cards', 'mana'].forEach(function (id) {
       var e = 找id(id);
       if (e && e.parentNode !== g) g.appendChild(e);
+    });
+    ['.playerhero', '.opponenthero'].forEach(function (sel) {
+      try { var e = d.querySelector(sel); if (e && e.parentNode !== g) g.appendChild(e); } catch (err) {}
     });
 
     if (!找id('hs-settings')) {
@@ -584,7 +671,11 @@
       b.id = 'hs-settings';
       b.textContent = '设置';
       b.onclick = function () {
-        if (typeof W.showGameMenu === 'function') W.showGameMenu();
+        /* 走我们自己的菜单入口（游戏/菜单.js）—— 与 ESC 是同一个口子。
+           上一版调的是 `index.html` 末尾内联的 `showGameMenu()`，而那个函数定义在
+           `</body>` 之后、抽骨架时被丢掉，沙盒里根本不存在 → 按钮点了没反应。 */
+        if (W.HS_MENU && typeof W.HS_MENU.开 === 'function') { W.HS_MENU.开(); return; }
+        if (typeof W.showGameMenu === 'function') W.showGameMenu();      // 兜底（独立网页旧路径）
       };
       g.appendChild(b);
     }
@@ -692,10 +783,13 @@
       g.appendChild(mask);
     }
     if (!arrow) {
-      /* ★ 挂在 `document.body` 上，**坐标是视口坐标** —— 和上游那条红色虚线同一套。
-         原因是立体视角：战场被 rotateX 之后，设计坐标到屏幕不再是线性缩放
-         （越远压得越扁），按设计坐标画的箭头会指不到指针底下。
-         放在 body 上就永远是屏幕坐标系，两个视角都不用改一行逻辑。 */
+      /* 坐标是**视口坐标** —— 和上游那条红色虚线同一套。原因是立体视角：战场被 rotateX 之后，
+         设计坐标到屏幕不再是线性缩放（越远压得越扁），按设计坐标画的箭头会指不到指针底下。
+         ⚠ 但**宿主换成了"作品根节点"**（2026-10-05）：原来挂 `document.body`，而沙盒里
+         舞台根 `z-index` 21 亿 + `#game` 不透明底色铺满整屏 → 挂 body 的箭头**画在底色下面，看不见**
+         （和演出层/提示条是同一个坑）。根节点没有 transform，所以挂它**仍然是屏幕坐标系**，
+         两个视角都不用改逻辑，而且层叠归位。 */
+
       arrow = d.createElementNS('http://www.w3.org/2000/svg', 'svg');
       arrow.id = 'hs-arrow';
       arrowLine = d.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -706,7 +800,7 @@
       arrowHead.setAttribute('fill', '#6fbf73');
       arrow.appendChild(arrowLine);
       arrow.appendChild(arrowHead);
-      (d.body || g).appendChild(arrow);
+      ((W.HS_UI_宿主 && W.HS_UI_宿主()) || d.body || g).appendChild(arrow);
     }
     if (!preview) {
       preview = d.createElement('div');
@@ -883,9 +977,10 @@
   function unitCardInfo(el) {
     if (!el) return null;
     var hero = (el.id === 'opposinghero' || el.id === 'playerhero');
-    var lab = d.getElementById(el.id === 'opposinghero' ? 'opponentlabel' : 'playerlabel');
+    /* 名字的兜底来源里原来读过 `#opponentlabel` / `#playerlabel` —— 那两个元素已删除，
+       英雄框的显示名改由关卡数据直接写进 DOM（见 卡库.js 乙段的 写('.opposingHeroHealth') 一族）。 */
     return {
-      name: el.__hsName || (hero && lab ? String(lab.textContent).trim() : '') ||
+      name: el.__hsName ||
             (el.classList.contains('computer-cardinplay') ? '对方单位' : '我方单位'),
       mana: '',
       atk: hero ? '' : numOf(el.children[0] && el.children[0].children[0]),
@@ -931,9 +1026,13 @@
 
   /* ================= ⑤ 手牌出牌：我们全包（含落格与结算） ================= */
 
-  /* 出一张手牌：出得起 + 有空格 → 调上游的 placeCardFunc 结算，然后把手牌那张移除。
-     上游的 placeCardFunc 要求 `collision == true`（它本来是拖拽碰撞测验的结果），
-     这里由我们直接置上 —— 因为落点是我们自己算的。 */
+  /* 出一张手牌 —— **落场我们自己做**（2026-10-05 用户指令：移除上游）。
+     上一版是「置 `W.collision = true` → 调上游 `placeCardFunc()` → 无条件 `cardEl.remove()`」。
+     这条在沙盒里是坏的：平台把脚本包进 `(function(){…}).call(window)`，上游顶层
+     `var collision` 只是 window 上的**副本** —— 我们写的值到不了它读的那个变量，
+     `if(collision == true)` 恒假、**落场根本没发生**，而手牌照样被收走。
+     现在的口径（用户定的三条）：**先落场 → 复核扣费与落场都成功 → 才收手牌；
+     失败就把手牌留下、把刚落的撤掉、把法力还回去，并说出原因。** */
   function playFromHand(cardEl, slotIndex) {
     var c = readCard(cardEl);
     if (!c) return false;
@@ -970,29 +1069,68 @@
       提示码('META_INCOMPLETE', { 卡: c.name });
       return false;
     }
-    var known = false;
+    var 卡对象 = null;
     for (var i = 0; i < deckCards.length; i++) {
-      if (deckCards[i]['name'] === c.name) { known = true; break; }
+      if (deckCards[i]['name'] === c.name) { 卡对象 = deckCards[i]; break; }
     }
-    if (!known) {
+    if (!卡对象) {
       /* 意图层的"元信息不全"：这张牌在牌库里找不到 —— 以前只 console.error（没人看得到） */
       报(1, 'META_INCOMPLETE', { 卡: c.name, 牌库: deckCards.length }, '严重');
       提示码('META_INCOMPLETE', { 卡: c.name });
       return false;
     }
 
-    pendingSlot = slotIndex;                 // syncSlots 会把它放进这一格
-    W.collision = true;                      // 让上游的 placeCardFunc 认账
-    W.getNameOfElement = c.name;
+    /* ★★ 落场：**我们自己 append**，不再借上游的 placeCardFunc（见函数头那段）。
+       顺序照上游：扣费 → append 卡面 → 报卡名 → `cardPlaceSnds()` 执行战吼；落完**复核**。 */
+    var board = boardOf('player');
+    if (!board) { 提示码('BOARD_FULL_DEPLOY', { 方: '我方' }); return false; }
+    var 前子数 = board.childElementCount;
+    var 前法力 = 有法力;
+    var 落下的 = null;
+    var 出错 = '';
     try {
-      W.placeCardFunc();                     // 上游结算：扣费 + append 到 .board--player
+      /* ① 扣费 —— 只有资源层那个数说了算（它是法力唯一的事实源） */
+      if (W.HS_RESOURCE && typeof W.HS_RESOURCE.花 === 'function') {
+        if (!W.HS_RESOURCE.花(cost, c.name)) {
+          提示码('INSUFFICIENT_MANA', { 卡: c.name, 需: cost, 有: 前法力 });
+          return false;
+        }
+      } else {
+        W.mana = 前法力 - cost;               // 没资源层时退回全局量（独立网页早期 / 单测）
+      }
+      /* ② 造卡面并落场：用我们自己的工厂（卡库.js 丁段），与敌方那条路同一套 */
+      落下的 = (W.HS_CARD && typeof W.HS_CARD.造场上卡 === 'function')
+        ? W.HS_CARD.造场上卡(c.name, 'player')
+        : (typeof 卡对象.getPlayerHTML === 'function' ? 卡对象.getPlayerHTML() : null);
+      if (!落下的) throw new Error('造不出卡面节点');
+      pendingSlot = slotIndex;                 // syncSlots 会把它放进这一格
+      board.appendChild(落下的);
+      /* ③ 战吼：执行器挂在 `cardPlaceSnds`（界面层自己那份），它靠 getNameOfElement 认卡 */
+      W.getNameOfElement = c.name;
+      try { if (typeof W.cardPlaceSnds === 'function') W.cardPlaceSnds(); }
+      catch (err) { 出错 = '战吼执行出错：' + ((err && err.message) || err); }
     } catch (err) {
-      // 上游那句尾部有 cardPlaceSnds() 之类的音效调用，可能抛；牌已经上场了，不该连累后面
+      出错 = (err && err.message) || String(err);
     }
-    // ★ 立刻复位：placeCardFunc 是**同步**读 collision 的，而它是一个全局开关。
-    //   不复位的话，之后任何一次手牌 mouseup 都会再触发一次出牌。
-    W.collision = false;
-    cardEl.remove();                         // 手牌那一张收走
+    /* ④ 复核：**棋盘真的多了一张**、**法力真的扣掉了** —— 两条都成立才算成功 */
+    var 现在法力 = (W.HS_RESOURCE && typeof W.HS_RESOURCE.法力 === 'function')
+      ? Number(W.HS_RESOURCE.法力()) : Number(W.mana);
+    var 落场成功 = !!落下的 && board.childElementCount === 前子数 + 1
+      && (前法力 - 现在法力) === cost;
+    if (!落场成功) {
+      /* 失败：撤掉刚落的、把法力还回去，**手牌留在手上**，并把原因说出来。
+         这一段就是这次改动的重点 —— 以前"不管成没成都收手牌"，于是牌没了、场上也没有。 */
+      try { if (落下的 && 落下的.parentNode) 落下的.parentNode.removeChild(落下的); } catch (e) {}
+      try {
+        if (W.HS_RESOURCE && typeof W.HS_RESOURCE.设法力 === 'function') W.HS_RESOURCE.设法力(前法力);
+        else W.mana = 前法力;
+      } catch (e) {}
+      pendingSlot = -1;
+      报(1, 'DEPLOY_FAILED', { 卡: c.name, 原因: 出错 || '落场没生效', 子数: 前子数, 法力: 现在法力 }, '严重');
+      提示码('DEPLOY_FAILED', { 卡: c.name, 原因: 出错 || '落场没生效' });
+      return false;
+    }
+    cardEl.remove();                         // ★ 确认成功了，才收走手牌那一张
     /* B2：玩家上场也要有叙述（和敌方那条同构：从英雄指向落点 + 卡片浮现）。
        ⚠ 落点必须是**格子**，不是"棋盘最后一个子节点" —— 上一版就是这么写的，结果：
          `placeCardFunc` 刚 append、`syncSlots` 还没落格，那一刻量到的位置是棋盘的左缘，
@@ -1138,7 +1276,8 @@
   }
 
   function 挂全部体力徽章() {
-    var list = d.querySelectorAll('.cardinplay');
+    /* ⚠ 只给**棋盘里的单位**挂徽章：英雄框也带 `cardinplay` 类，收进来会给英雄多挂一个徽章。 */
+    var list = d.querySelectorAll('.board .cardinplay');
     for (var i = 0; i < list.length; i++) 挂体力徽章(list[i]);
   }
 
@@ -1167,6 +1306,18 @@
 
   function 应用一次攻击(攻方El, 目标El, kind) {
     if (!攻方El || !目标El) return null;
+
+    /* ★★ 每回合攻击次数 —— **在结算层也守一道**（2026-10-05 用户规则）。
+       用户在界面上受的那道闸是 `canAttack` 这个类（拖动的第一句就查它），
+       但结算也可能被别的路径调到（演出管线替敌方补的那一拍、测试、将来的新入口）——
+       规则不该只挂在 UI 上。所以到了真正结算这一步，**次数用尽就拒绝**：
+       返回 null 表示"这一拍没打出去"，调用方照常往下走（不会改血量）。 */
+    var 已打 = 攻方El.__hs本回合攻击次数 || 0;
+    if (已打 >= 攻击上限(攻方El)) {
+      报(2, 'MINION_CANT_ATTACK', { 攻方: 攻方El.__hsName || 攻方El.id, 次数: 已打 }, '提示');
+      return null;
+    }
+
     var 报告 = { 攻方: 攻方El.id, 目标: 目标El.id, kind: kind, 落地: false, 事件: [] };
 
     var 攻值 = 读攻(攻方El);
@@ -1223,6 +1374,25 @@
       报告.事件.push('体力 -' + 攻耗);
     }
     攻方El.__hs攻击过 = true;                                        // 本回合攻击过 → 结束不回血
+
+    /* ★★ 每回合攻击次数（2026-10-05 用户）：**没有特殊词条的卡每回合只能攻击一次**。
+       原来唯一的闸门是 `canAttack` 这个类，而打完**没有任何地方把它摘掉**
+       （全仓库搜不到一处 `remove('canAttack')`）—— 于是同一个单位能连着打好几次，
+       用户报的正是这个。现在：打过就记数，到上限就摘掉 `canAttack` 与绿光；
+       下一次拖动会被 `if (!unit.classList.contains('canAttack'))` 那道闸当场拒掉。
+       计数在**该方回合开始**时清零（挂在 清攻击过标记 里，时机刚好）。 */
+    try {
+      var 次数 = (攻方El.__hs本回合攻击次数 || 0) + 1;
+      攻方El.__hs本回合攻击次数 = 次数;
+      var 上限次 = 攻击上限(攻方El);
+      if (次数 >= 上限次) {
+        攻方El.classList.remove('canAttack');
+        攻方El.style.boxShadow = 'none';
+        报告.事件.push('攻击次数用尽（' + 次数 + '/' + 上限次 + '）');
+      } else {
+        报告.事件.push('攻击次数 ' + 次数 + '/' + 上限次);
+      }
+    } catch (e5) { /* 计数失败不该挡住结算 */ }
 
     /* ── ⑤ 移除与胜负 ─────────────────────────────────────────────── */
     var 目标亡 = false;
@@ -1284,7 +1454,7 @@
     回.textContent = '关卡列表';
     回.onclick = function () { W.location.href = W.location.pathname; };
     bar.appendChild(回);
-    d.body.appendChild(bar);
+    ((W.HS_UI_宿主 && W.HS_UI_宿主()) || d.body).appendChild(bar);
   }
 
   /* ==================== ★★ 卡的效果（阶段 D：把 `card_effects.js` 拿回来）====================
@@ -1520,7 +1690,12 @@
     if (!el) {
       el = d.createElement('div');
       el.id = 'hs-pick';
-      d.body.appendChild(el);
+      /* ★ 挂到**本作品的根节点**（沙盒是 `#hs-sandbox-root`，独立网页才落 body）——
+         理由与 演出.js 的 `覆盖宿主()` 那段一致：挂 body 的覆盖层会被"舞台根 + `#game` 的不透明底色"
+         盖在下面，元素在、样式对，玩家却看不见。 */
+      var 宿主 = null;
+      try { if (W.HS_UI_根 && typeof W.HS_UI_根 === 'function') 宿主 = W.HS_UI_根(); } catch (e) {}
+      (宿主 || d.body).appendChild(el);
     }
     el.textContent = 文字;
     el.classList.add('on');
@@ -1710,12 +1885,26 @@
     return 回了;
   }
 
+  /* 一张卡**每回合能攻击几次**（2026-10-05 用户规则）：
+     **没有特殊词条的角色卡每回合只能打一次**；带 `风怒` / `多次攻击` 这类词条的放宽到 2。
+     读的是卡库.js 丙段那张卡表（`HS_CARDS[卡名].关键词`），与引擎/预览读的是同一张表。 */
+  function 攻击上限(el) {
+    var 名 = el && el.__hsName;
+    var 定 = (名 && W.HS_CARDS) ? W.HS_CARDS[名] : null;
+    var kw = (定 && 定.关键词) || {};
+    if (kw.风怒 || kw.多次攻击 || kw.windfury || kw.连续攻击) return 2;
+    return 1;
+  }
+
   function 清攻击过标记(席位) {
     var board = boardOf(席位);
     if (!board) return 0;
     var list = board.querySelectorAll('.cardinplay');
     var n = 0;
-    for (var i = 0; i < list.length; i++) if (list[i].__hs攻击过) { list[i].__hs攻击过 = false; n += 1; }
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].__hs攻击过) { list[i].__hs攻击过 = false; n += 1; }
+      list[i].__hs本回合攻击次数 = 0;        // ★ 该方回合开始 → 攻击次数清零（见 攻击上限）
+    }
     return n;
   }
 
@@ -2855,25 +3044,42 @@
     }, 150);
   }
 
-  /* ==================== 上游体检 + 兜底回合机（2026-10-04，真机"点结束回合没反应"）====================
-     真机报告的定性证据：`最近 8 次点击` 里 `#endturn` 点了 **5 次**（说明点击确实落在按钮上），
-     而 `回合留痕 opponentTurn=0 playerTurn=0`、演出为空 —— **按钮上没有监听器**。
-     上游 `index.js` 是在**加载期**就 `document.getElementById("endturn").addEventListener(...)` 的，
-     那一句抛错（元素还没在、或宿主改写了查找）就会让**整个 index.js 中断**：它后面定义的所有函数
-     （`opponentTurn`/`playerTurn`/`startGame`…）都不存在，页面从此"半死"。
-     这跟 MMD 文档里那条真红线是同一件事：**脚本执行时 DOM 还没建好**。
-
-     所以这里做两件事：
-       ① `上游体检`：把几个哨兵量的有无报进"本局信息"，下次一眼能定性；
-       ② `兜底回合机`：哨兵缺了就**由我们推进回合**（涨法力、抽牌、清状态），并在检错层记一条严重 ——
-          宁可"敌方不出牌但你能继续打"，也不要一个按下去毫无反应的按钮。 */
-  function 上游体检() {
-    var 要的 = ['startGame', 'playerTurn', 'opponentTurn', 'computerCardPlace', 'updateDeckCount', 'attack'];
-    var 在 = [], 缺 = [];
-    要的.forEach(function (k) { if (typeof W[k] === 'function') 在.push(k); else 缺.push(k); });
-    return { 在: 在, 缺: 缺 };
+  /* ==================== 模块体检 + 兜底回合机 ====================
+     ⚠ 2026-10-05（批次 D）之后，这一段的**对象变了**：`index.js` / `attack.js` /
+     `elementsController.js` 已经被整个删除，回合与胜负换成 `游戏/回合.js`。
+     所以"上游那几个函数在不在"不再是问题 —— 真正要盯的是：
+       ① **我们的模块装齐了吗**（缺哪个模块，"点了没反应"就有了解释）；
+       ② **回合那几个出口还是我们的吗**（有没有人又把它们换回别人的实现）。
+     兜底回合机的价值也变了：以前是"上游 index.js 加载期抛错 → 整段中断"的保底；
+     现在是"`游戏/回合.js` 没装上"的保底 —— 同样宁可"敌方不出牌但你能继续打"。 */
+  function 模块体检() {
+    var 模块 = ['HS_TURN', 'HS_MENU', 'HS_UI', 'HS_RESOURCE', 'HS_PIPELINE', 'HS_STATE', 'HS_CHECK', 'HS_CARD'];
+    var 缺 = 模块.filter(function (k) { return !W[k]; });
+    /* 回合那几个出口必须**仍然是我们的**；界面层的叙述包装（带 __hsNarrated）是设计如此，不算被换掉 */
+    var 我们的 = {
+      startGame: W.HS_TURN && W.HS_TURN.开局发牌,
+      playerTurn: W.HS_TURN && W.HS_TURN.我方回合开始,
+      opponentTurn: W.HS_TURN && W.HS_TURN.结束回合,
+      computerCardPlace: W.HS_TURN && W.HS_TURN.敌方出一张,
+      updateDeckCount: W.HS_TURN && W.HS_TURN.牌库计数,
+      attack: W.HS_TURN && W.HS_TURN.刷可攻击,
+    };
+    var 被换 = Object.keys(我们的).filter(function (k) {
+      var f = W[k];
+      if (!f || f === 我们的[k]) return false;
+      /* 界面层自己包的那些（叙述包装 wo/wp、敌方出牌的 __hsNamed、攻击绑定的 __hsOnce）
+         **包在我们的上面**是设计如此，不算"被别人换掉"。 */
+      if (f.__hsNarrated || f.__hsNamed || f.__hsOnce || f.__hsOurs) return false;
+      return true;
+    });
+    return {
+      模块: (模块.length - 缺.length) + '/' + 模块.length,
+      缺: 缺,
+      回合出口是我们的: 被换.length === 0,
+      被换掉的: 被换,
+    };
   }
-  /* 兜底"开始我方回合"：涨法力、抽牌、清状态。只走我们自己的层（上游缺函数时也能跑）。 */
+  /* 兜底"开始我方回合"：涨法力、抽牌、清状态。只走我们自己的层。 */
   function 兜底开始我方回合() {
     try {
       hideMask();
@@ -2889,19 +3095,19 @@
     } catch (e) { 报(4, 'ATOMIC_VIOLATION', { 兜底回合失败: String(e && e.message) }, '严重'); }
   }
   function 装兜底回合钮() {
-    if (typeof W.opponentTurn === 'function') return false;      // 上游好好的：不插手
+    if (W.HS_TURN && typeof W.HS_TURN.结束回合 === 'function') return false;   // 我们的回合机在：不插手
     var et = 找id('endturn');
     if (!et || et.__hsFallback) return false;
     et.__hsFallback = true;
     et.addEventListener('click', function () {
       setEnemyBusy(true);
-      报(4, 'ATOMIC_VIOLATION', { 兜底: '上游回合机没装起来，用兜底推进', 体检: 上游体检() }, '严重');
+      报(4, 'ATOMIC_VIOLATION', { 兜底: '回合一族没装上，用兜底推进', 体检: 模块体检() }, '严重');
       W.setTimeout(兜底开始我方回合, 600);
     });
     return true;
   }
-  W.HS_兜底回合 = { 体检: 上游体检, 装: 装兜底回合钮, 开始我方回合: 兜底开始我方回合 };
-  /* 装兜底回合钮的**时机**：上游是加载期绑的，所以要等它绑完（或确认它没绑上）。
+  W.HS_兜底回合 = { 体检: 模块体检, 装: 装兜底回合钮, 开始我方回合: 兜底开始我方回合 };
+  /* 装兜底回合钮的**时机**：等我们的回合模块绑完（它自己也在载入期与稍后各绑一次）。
      这里最多试 20 次（每 500ms）：`opponentTurn` 一出现就作罢，一直不出现就装上我们的兜底。 */
   (function 试装兜底() {
     var 次 = 0;
@@ -2940,11 +3146,6 @@
       if (!atTurnStart) return;
       atTurnStart = false;
       try {
-        var hp = d.getElementById('playerheropower');
-        if (hp && !hp.classList.contains('canAttack')) {
-          hp.classList.add('canAttack');
-          hp.style.boxShadow = '0px 2px 15px 12px #0FCC00';
-        }
         var units = d.querySelectorAll('.player-cardinplay');
         for (var i = 0; i < units.length; i++) {
           if (units[i].classList.contains('canAttack')) continue;   // 已经能打的不重复刷（它不是本轮上场的）
@@ -3119,11 +3320,13 @@
            '，格1 起点 ' + c1.offsetLeft + '）');
       }
     }
-    var hb = R(d.querySelector('.opponenthero')), lb = R(d.getElementById('opponentlabel'));
-    /* ⑧ 在沙盒里跳过：舞台尺寸由平台给，右栏与英雄框的相对位置会随舞台比例变（不是布局错）。 */
+    /* ⚠ ⑧ 原为"敌方名字贴着自己的英雄框" —— 2026-10-05 起**双方名字标签整个删掉**
+       （用户："左上角还有玩家 vs 对方的字样，那个没有存在必要，删除"），这条断言随之取消。
+       英雄框本身的相对位置由 ⑧′ 继续盯着（不依赖标签）。 */
+    var hb = R(d.querySelector('.opponenthero')), ha = R(d.querySelector('.playerhero'));
     if (!沙盒) {
-      ok('⑧ 敌方名字贴着自己的英雄框（立体视角搬去桌对面也要跟）',
-         !!hb && !!lb && lb.left >= hb.left - 8 && lb.right <= hb.right + 8);
+      ok('⑧′ 双方英雄框都搬进了 #game（预览与右栏的层叠要靠这一点）',
+         !!hb && !!ha && hb.width > 0 && ha.width > 0);
     }
     var phr = R(d.querySelector('.playerHeroHealth')), phb = R(d.querySelector('.playerhero'));
     ok('⑨ 我方血量在英雄框内（不越到下沿之外）',
@@ -3260,18 +3463,21 @@
        typeof W.HS_ENGINE.reduce === 'function' && typeof W.HS_ENGINE.回放 === 'function' &&
        !!W.HS_CARDS && Object.keys(W.HS_CARDS).length >= 20);
 
-    /* ㉙ 资源与回合归我们（阶段 C）：法力上限的真相在 `HS_RESOURCE`，
-       `W.manaCapacity` 只是它写出来的缓存（唯一写入点）；水晶颗数必须等于上限
-       （上限能降 —— 负面任务 −1 时上游只会加不会减，裁水晶是我们干的）。
-       ⚠ 标记 `__hsOurs` 要穿过界面层的回合叙述包装，所以那条包装也得把标记搬过来。 */
+    /* ㉙ 资源与回合归我们：法力上限的真相在 `HS_RESOURCE`，`W.manaCapacity` 只是它的缓存
+       （唯一写入点）；水晶颗数必须等于上限（上限能降 —— 负面任务 −1 时上游只会加不会减，裁水晶是我们干的）。
+       ⚠ 2026-10-05（批次 C/D）**这条断言的口径换过一次**：原来判的是 `W.playerTurn.__hsOurs`
+       （资源层当年给上游函数打的标记）。现在回合由 `游戏/回合.js` 实现、`W.playerTurn` 是**界面层的
+       叙述包装**（它没有那个标记），所以改判"回合一族在位 + 资源层认得它是我们的"。 */
     var 资 = W.HS_RESOURCE;
     if (资) {
       var 上限 = 资.上限();
       var 颗数 = d.getElementsByClassName('manabox').length;
-      ok('㉙ 资源与回合归我们（HS_RESOURCE 在位 · 上限 = 全局量 · 水晶颗数 = 上限）',
-         资.是不是我们的() && W.playerTurn && W.playerTurn.__hsOurs &&
+      var 回合是我们的 = !!(W.HS_TURN && typeof W.HS_TURN.我方回合开始 === 'function');
+      ok('㉙ 资源与回合归我们（HS_RESOURCE 在位 · 回合一族在位 · 上限 = 全局量 · 水晶颗数 = 上限）',
+         回合是我们的 && 资.是不是我们的() &&
          W.manaCapacity === 上限 && 颗数 === 上限,
-         '上限 ' + 上限 + ' / 全局 ' + W.manaCapacity + ' / 水晶 ' + 颗数);
+         '上限 ' + 上限 + ' / 全局 ' + W.manaCapacity + ' / 水晶 ' + 颗数 +
+         ' / 回合一族 ' + (回合是我们的 ? '在' : '**不在 ✗**'));
     }
 
     /* ㉘ 场上卡**落在它那一格里**（用户 2026-10-03 报的"角色没对齐虚线框"）。
@@ -3322,7 +3528,6 @@
         ['我方第 1 格', '#hs-slots-player .hs-slot', '.board--player'],
         ['敌方第 1 格', '#hs-slots-enemy .hs-slot', '.board--opponent'],
         ['结束回合', '#endturn', null],
-        ['英雄技能', '#playerheropower', null],
         ['手牌区', '#cards', null],
         ['设置', '#hs-settings', null],
         ['任务区', '#hs-quest', null],
@@ -3465,10 +3670,18 @@
     ok('㉟ 权威状态层在位（HS_STATE · 提交/对账/追平）',
        !!W.HS_STATE && typeof W.HS_STATE.提交 === 'function' &&
        typeof W.HS_STATE.对账 === 'function' && typeof W.HS_STATE.追平 === 'function');
+    /* ★ 「在不在局里」算一次，给㉟/㊱ 共用（2026-10-06）。
+       权威状态的 revision 是**对局里才有**的：在主页面/沙盒刚装上卡时它一定是 null ——
+       那几条"版本号 ≥ 1 / 对账为空 / 展示追平"此时**不该判**，否则主页面会挂一排无意义的红
+       （实测：`?level=1` 之外打开时 ㉟×2 ㊱×2 全红，看着像坏了）。 */
+    var 在局里 = false;
+    try {
+      在局里 = !!(W.isInGame === true || (W.CAMPAIGN && W.CAMPAIGN.level) || (W.HS_FREE && W.HS_FREE.slots));
+    } catch (e) {}
     if (W.HS_STATE && typeof W.HS_UI_取值 === 'function') {
       var 版 = W.HS_STATE.版本号();
-      ok('㉟ 权威状态已有版本号（revision ≥ 1）', !!版 && 版.revision >= 1,
-         '版本号：' + JSON.stringify(版));
+      ok('㉟ 权威状态已有版本号（revision ≥ 1）', !在局里 || (!!版 && 版.revision >= 1),
+         (!在局里 ? '（不在局里，本条不判）' : '版本号：' + JSON.stringify(版)));
       var 差0 = W.HS_STATE.对账(W.HS_UI_取值);
       /* 演出进行中，场面本来还在动（敌方刚落下一只随从、提交点还没到）——
          这时要求"对账为空"是错的，会误报（实测连打三回合时误报过 enemy.场上）。
@@ -3482,10 +3695,15 @@
          '不一致：' + (差0.map(function (x) { return x.项; }).join('、') || '无')
          + (!闲3 && 差0.length ? '（演出进行中，本条不判）' : ''));
       /* 故意偷改 DOM（模拟"演出/别人"改数字）：对账必须抓到，追平必须改回来。
-         ⚠ 这一条也只在**空闲态**成立：演出进行中本就有别的差异，分不清是谁改的。 */
+         ⚠ 两个前置条件，缺一个就会**假红**（实测踩过）：
+           ① 空闲态 —— 演出进行中本来就有别的差异，分不清是谁改的；
+           ② **权威状态已建立**（revision ≥ 1）—— 还没提交过时 `对账` 必然返回空
+              （它就是拿"上一次提交的权威"比当前的），那时判它"没抓到"是冤枉。 */
+      var 权威在 = false;
+      try { 权威在 = !!(W.HS_STATE && W.HS_STATE.版本号 && W.HS_STATE.版本号() && W.HS_STATE.版本号().revision >= 1); } catch (e) {}
       var 血 = d.querySelector('.playerHeroHealth');
       var 原 = 血 ? 血.textContent : null;
-      if (血 && 闲3) {
+      if (血 && 闲3 && 权威在) {
         血.textContent = String((parseInt(原, 10) || 0) - 7);
         var 差1 = W.HS_STATE.对账(W.HS_UI_取值);
         ok('㉟ 偷改 DOM 会被对账抓到（两套真相现形）', 差1.length > 0,
@@ -3505,13 +3723,14 @@
     if (W.HS_STATE && typeof W.HS_STATE.版本号 === 'function') {
       var v2 = W.HS_STATE.版本号();
       ok('㊱ 展示版本号不超过权威（展示只能滞后，不能超前）',
-         !!v2 && v2.展示revision <= v2.revision, '版本号：' + JSON.stringify(v2));
+         !在局里 || (!!v2 && v2.展示revision <= v2.revision),
+         (!在局里 ? '（不在局里，本条不判）' : '版本号：' + JSON.stringify(v2)));
       var 闲2 = true;
       if (W.HS_PIPELINE && W.HS_PIPELINE.isLocked && W.HS_PIPELINE.queueLength) {
         闲2 = !W.HS_PIPELINE.isLocked() && W.HS_PIPELINE.queueLength() === 0;
       }
       ok('㊱ 空闲时展示已追平权威（演出播完不留尾巴）',
-         !!v2 && (!闲2 || v2.展示revision === v2.revision),
+         !在局里 || (!!v2 && (!闲2 || v2.展示revision === v2.revision)),
          '锁=' + (W.HS_PIPELINE ? W.HS_PIPELINE.isLocked() : '-') + ' 队列=' + (W.HS_PIPELINE ? W.HS_PIPELINE.queueLength() : '-') + ' 版本=' + JSON.stringify(v2));
     }
 
@@ -3682,7 +3901,7 @@
         '<div class="hr-head"><span>本局信息（可全选复制）</span>' +
         '<button class="hr-copy">复制</button><button class="hr-close">关闭</button></div>' +
         '<textarea readonly spellcheck="false"></textarea>';
-      d.body.appendChild(box);
+      ((W.HS_UI_宿主 && W.HS_UI_宿主()) || d.body).appendChild(box);
       box.querySelector('.hr-close').onclick = function () { box.classList.remove('on'); };
       box.querySelector('.hr-copy').onclick = function () {
         var ta = box.querySelector('textarea');
@@ -3695,7 +3914,8 @@
   }
 
   W.HS_INTERACT = {
-    slotAt: slotAt, slotRect: slotRect, hotSlot: hotSlot,
+    slotAt: slotAt, slotRect: slotRect, hotSlot: hotSlot, toDesign: toDesign,
+    要转屏: 要转屏, fit: function () { return stage() ? stage().__hsFit : null; },
     syncSlots: syncSlots, fitStage: fitStage, toDesign: toDesign,
     playFromHand: playFromHand, refillIfEmpty: refillIfEmpty,
     slotsOf: function (side) { return slots[side].slice(); },

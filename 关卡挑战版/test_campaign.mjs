@@ -404,16 +404,20 @@ section('E 去炉石美术：样式的加载方式（决定会不会白打 404�
   ok(fs.existsSync(cssPath), '游戏/样式.css 存在');
   ok(html.includes('游戏/样式.css'), 'index.html 引用了 游戏/样式.css');
 
-  // 这三条是这一段的关键：样式必须**排在两个上游样式表之后**（否则覆盖不过），
-  // 且必须在 **body 之前**加载 —— background-image 的请求在解析 body 那一刻就发出去了，
+  // 这几条是这一段的关键：**页面上不许再有第三方样式表**（2026-10-05 批次 E：
+  // `styles.css` 里仍在起作用的那批声明已迁进 游戏/样式.css 的"段 1.5"，那张表整个出列），
+  // 且我们的样式必须在 **body 之前**加载 —— background-image 的请求在解析 body 那一刻就发出去了，
   // 靠脚本在 DOMContentLoaded 注入来不及拦（实测会白打 11 个 404）。
-  const iStyles = html.indexOf('href="styles.css"');
   // 用 `href="..."` 定位，别用裸文件名 —— 文件顶部那行说明注释里也写着「游戏/样式.css」，
   // 裸匹配会命中注释，于是"谁先谁后"就测反了（这里踩过一次）。
+  const iStyles = html.indexOf('href="styles.css"');
   const iOurs = html.indexOf('href="游戏/样式.css');
   const iBody = html.indexOf('<body');
-  ok(iStyles !== -1 && iStyles < iOurs, 'ours.css 排在上游 styles.css 之后（能覆盖它）');
+  ok(iStyles === -1, '页面上不再加载 styles.css（第三方样式表已出列）');
+  ok(iOurs !== -1, 'index.html 引用了 游戏/样式.css');
   ok(iOurs < iBody, 'ours.css 在 <body> 之前加载（早于任何背景图请求）');
+  // 外链样式表也一并不许有（cdnjs 那条 font-awesome 是联网依赖，只为了一个齿轮图标）
+  ok(!/https?:\/\/[^"]+\.css/.test(html), 'index.html 不引用任何外链样式表');
 
   // 断言全部走「剥掉注释 → 拆成一条条规则」的结构，不做裸字符串包含 ——
   // 注释里出现的类名会把包含式断言骗过去（第一版就是这么假绿的）。
@@ -424,16 +428,31 @@ section('E 去炉石美术：样式的加载方式（决定会不会白打 404�
   // 这个文件不该引用任何外部资源 —— 引用了就说明还有 404 在路上
   ok(!/url\(/.test(css), 'ours.css 里没有任何 url(...)：不引用素材，也就不会发出请求');
 
-  // 上游 styles.css 里那 21 处 url(src/...) 必须逐条被压平（漏哪条就漏哪条 404）
+  // 上游 styles.css 里那些 url(src/...) 必须逐条被压平（漏哪条就漏哪条 404）。
+  // ⚠ 2026-10-05：`.playerheropower` 已**从源头删除**（DOM / 样式 / 三处脚本引用一起走），
+  //    所以它不再是一条要压平的素材引用 —— 清单减一。
   const bgSel = selOf('background-image: none !important');
   const mustCover = ['#load', '#mainmenu', '#openpacks', '#howtoplay', '.bg-image',
-                     '.playerhero', '.opponenthero', '.playerheropower',
+                     '.playerhero', '.opponenthero',
                      '.player-deck', '.computer-deck', '.enemycard',
                      '#packOpenAnimElem', '#cardpackimg', '#confirm',
                      '#vs', '#victoryImg1', '#victoryImg2', '#hoggerposter', '#gifhint',
                      '.divineShield', '.taunt', '.legendaryinplay'];
   const missed = mustCover.filter((s) => !bgSel.includes(s));
   ok(missed.length === 0, `压平规则覆盖了上游全部素材引用（漏掉：${missed.join(' ') || '无'}）`);
+
+  // 英雄技能（playerheropower）**彻底移除**：DOM、样式、脚本三处都必须零引用。
+  // 这条守卫盯着"少删一处就运行时炸"（元素没了、脚本还在按 id 取它）。
+  {
+    const 扫 = ['index.html', 'index.js', 'styles.css', 'src/scripts/attack.js',
+                'src/scripts/elementsController.js', '游戏/样式.css', '游戏/界面.js', '游戏/沙盒.js'];
+    const 残留 = 扫.filter((f) => {
+      const p = path.join(HERE, f);
+      if (!fs.existsSync(p)) return false;                 // 文件已整体删除 = 更干净
+      return /heropower/i.test(fs.readFileSync(p, 'utf8'));
+    });
+    ok(残留.length === 0, `英雄技能已零引用（残留：${残留.join(' ') || '无'}）`);
+  }
 
   // 卡面 / 场上卡**刻意不压平**：它们的图由 deck.js 写在行内样式上，将来要挂我们自己的图
   ok(!bgSel.includes('.card-face') && !bgSel.includes('.cardinplay'),
@@ -531,34 +550,46 @@ section('E 外壳层是幂等的');
   ok(ctx.CAMPAIGN_UI !== undefined, '重复执行不会把关卡层打翻（乙段有幂等闸）');
 }
 
-section('F 资源与回合（阶段 C：资源层归我们）');
+section('F 资源与回合（去上游：回合归 游戏/回合.js、法力真相归 游戏/资源.js）');
 {
-  /* 资源层（游戏/资源.js）是**页面侧**的文件：它要在 index.js 之后、界面.js 之前跑，
-     并且会换掉 window.playerTurn / placeCardFunc。所以这里先把上游那两拍做成最小实现，
-     再把资源层装进来 —— 验的是"我们的规则真的在算数"，不是 DOM 长得对不对。 */
+  /* 加载位次与页面上一致：**回合.js 在前、资源.js 在后**。
+     2026-10-05 起资源层不再包 upstream 的 playerTurn/placeCardFunc（那样会双重计算、
+     一回合涨两点法力），它只持有"法力/上限/回合号"这个真相；回合由 游戏/回合.js 实现。
+     所以这一段验两件事：① 回合.js 顶掉了那几个名字；② 资源.js 进来之后**没有**把它们改回去。 */
   const ctx = makeCtx({ search: '?level=1' });
   ctx.mana = 1;
   ctx.manaCapacity = 1;
-  let 上游回合次数 = 0;
-  ctx.playerTurn = function () {                    // 上游那一拍：自增一步 + 法力回满
-    上游回合次数++;
-    if (ctx.manaCapacity != 10) ctx.manaCapacity++;
-    ctx.mana = ctx.manaCapacity;
+  ctx.setTimeout = function () { return 0; };                 // 回合.js 载入时会排两次补绑，不真跑
+  ctx.HS_CARD = { 牌库: function (cards) { this.cards = cards || []; } };   // 载入期用不到，只求不炸
+  ctx.document = {
+    getElementById: function () { return null; },
+    querySelector: function () { return null; },
+    querySelectorAll: function () { return []; },
+    createElement: function () { return { classList: { add: function () {} }, style: {}, appendChild: function () {} }; },
+    body: {},
   };
-  ctx.placeCardFunc = function () { ctx.mana -= 2; };   // 模拟上游扣费
+  new vm.Script(fs.readFileSync(path.join(HERE, '游戏/回合.js'), 'utf8'),
+                { filename: '游戏/回合.js' }).runInContext(ctx);
+  const 回 = ctx.HS_TURN;
+  ok(!!回 && typeof 回.开局发牌 === 'function', '回合.js 已暴露（HS_TURN）');
+  ok(ctx.startGame === 回.开局发牌, 'startGame 已经是我们的发牌');
+  ok(ctx.playerTurn === 回.我方回合开始, 'playerTurn 已经是我们的回合开始');
+  ok(ctx.opponentTurn === 回.结束回合, 'opponentTurn 已经是我们的结束回合');
+  ok(ctx.computerCardPlace === 回.敌方出一张, 'computerCardPlace 已经是我们的敌方出牌');
+  ok(typeof 回.绑结束回合钮 === 'function' && typeof 回.胜利 === 'function', '结束回合入口与胜负序列都在');
+
   new vm.Script(fs.readFileSync(path.join(HERE, '游戏/资源.js'), 'utf8'),
                 { filename: '游戏/资源.js' }).runInContext(ctx);
-
   const 资 = ctx.HS_RESOURCE;
   ok(!!资, 'HS_RESOURCE 已暴露');
-  ok(资.是不是我们的() === true, '回合推进已换成我们的（__hsOurs 标记在）');
-  ok(ctx.placeCardFunc.__hsOurs === true, '出牌那一拍也换成我们的（出不起就不让上游扣）');
+  ok(ctx.playerTurn === 回.我方回合开始, '资源层不再抢回合（去上游之后它不该再包 playerTurn）');
+  ok(资.是不是我们的() === true, '资源层认得回合是我们的');
   ok(资.上限() === 1 && 资.法力() === 1, '开局 1/1');
   ok(ctx.mana === 1 && ctx.manaCapacity === 1, '全局量与我们的真相一致');
 
-  // ① 回合开始：上限 +1、法力回满 —— 全局量被"预置一步"，上游自增后正好落在我们的值上
-  ctx.playerTurn();
-  ok(上游回合次数 === 1, '上游那一拍确实被调用了（改能力，不改调用点）');
+  // ① 回合开始那一拍：回合.js 走的就是资源层这两个 API（见 回合.js 的 我方回合开始）
+  资.加上限(1, '回合开始');
+  资.回满();
   ok(资.上限() === 2 && 资.法力() === 2, '回合开始：上限 +1、法力回满（我们的规则）');
   ok(ctx.manaCapacity === 2 && ctx.mana === 2, '全局量被摆到与真相一致（唯一写入点）');
 
@@ -575,10 +606,10 @@ section('F 资源与回合（阶段 C：资源层归我们）');
   资.回满();
   ok(资.法力() === 6 && ctx.mana === 6, '回满 = 法力对上限');
   ok(资.花(4) === true && 资.法力() === 2, '花 4 点法力');
-  ok(资.花(99) === false && 资.法力() === 2, '出不起就不扣（返回 false）');
-  ctx.getNameOfElement = 'Ragnaros the Firelord';   // 8 费，手上只有 2 点
-  ctx.placeCardFunc();
-  ok(ctx.mana === 2 && 资.法力() === 2, '出不起的牌：上游那一下被挡住，法力不动（' + ctx.mana + '）');
+  /* 出不起就不扣：这一条现在是资源层自己守的（`花` 返回 false、法力不动）。
+     真正的"出不起就别落场"在 界面.js 的 playFromHand 里（扣费 → 落场 → 复核 → 才收手牌），
+     那一段要 DOM，不在这个 vm 用例里验 —— 它在浏览器里跑过（成功/失败两条路都验过）。 */
+  ok(资.花(99) === false && 资.法力() === 2, '出不起就不扣（资源层守第一道）');
 
   // ④ 账本：上限每一次变化都要留痕（任务区显示的就是它）
   const 账 = 资.历史();

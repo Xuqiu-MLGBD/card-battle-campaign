@@ -48,7 +48,9 @@ RUNTIME = [
     os.path.join("游戏", "事件.js"),
     os.path.join("游戏", "引擎.js"),
     os.path.join("游戏", "卡库.js"),
+    os.path.join("游戏", "回合.js"),      # 去上游：发牌 / 回合推进 / 落场 / 胜负（顶掉 index.js + attack.js 那部分）
     os.path.join("游戏", "查找.js"),      # MMD 沙盒适配：根部作用域查找 + 骨架 id 自愈 + 点击留痕
+    os.path.join("游戏", "菜单.js"),      # 去上游：菜单开合唯一入口（设置按钮与 ESC 同一入口）
     os.path.join("游戏", "资源.js"),
     os.path.join("游戏", "决策.js"),
     os.path.join("游戏", "文案.js"),      # 架构改进 A：拒绝码 → 中文文案（唯一出处）
@@ -56,6 +58,9 @@ RUNTIME = [
     os.path.join("游戏", "状态.js"),      # 改进 B：权威状态 + revision + 对账/追平
     os.path.join("游戏", "演出.js"),
     os.path.join("游戏", "界面.js"),
+    # 只在**沙盒**里加载、但同样属于"运行时源码"的文件也要进哈希清单 ——
+    # 否则"只改了 沙盒.js、构建戳不变"，`建沙盒卡.py --check` 就查不出卡过期（实测踩到过）。
+    os.path.join("游戏", "沙盒.js"),
 ]
 
 
@@ -82,6 +87,8 @@ OURS = {
     os.path.join("游戏", "事件.js"),
     os.path.join("游戏", "引擎.js"),
     os.path.join("游戏", "卡库.js"),
+    os.path.join("游戏", "回合.js"),      # 去上游：回合一族（发牌/推进/落场/胜负）
+    os.path.join("游戏", "菜单.js"),      # 去上游：菜单开合唯一入口
     os.path.join("游戏", "资源.js"),      # 阶段 C：资源与回合（法力上限 / 法力 / 抽牌补偿）
     os.path.join("游戏", "决策.js"),      # 阶段 E：敌方决策（三档难度）
     os.path.join("游戏", "文案.js"),      # 架构改进 A：拒绝码 → 中文文案（唯一出处）
@@ -148,7 +155,9 @@ INSERTS = [
      '<script src="' + v("游戏/卡库.js") + '"></script>',
      'before'),
     ('<script src="src/scripts/testing.js"></script>',
+     '<script src="' + v("游戏/回合.js") + '"></script>\n'
      '<script src="' + v("游戏/查找.js") + '"></script>\n'
+     '<script src="' + v("游戏/菜单.js") + '"></script>\n'
      '<script src="' + v("游戏/资源.js") + '"></script>\n'
      '<script src="' + v("游戏/决策.js") + '"></script>\n'
      '<script src="' + v("游戏/文案.js") + '"></script>\n'
@@ -160,8 +169,7 @@ INSERTS = [
 
 # 加载顺序的硬要求（出现在 index.html 里的先后）
 ORDER = [v("游戏/外壳.js"), v("游戏/事件.js"), v("游戏/引擎.js"), v("游戏/卡库.js"),
-         'src="index.js"',
-         v("游戏/查找.js"), v("游戏/资源.js"), v("游戏/决策.js"), v("游戏/文案.js"),
+         v("游戏/回合.js"), v("游戏/查找.js"), v("游戏/菜单.js"), v("游戏/资源.js"), v("游戏/决策.js"), v("游戏/文案.js"),
          v("游戏/检错.js"), v("游戏/状态.js"), v("游戏/演出.js"), v("游戏/界面.js")]
 
 # index.html 的替换：把上游那几行**摘掉**（对应文件留在盘上作对照物，只是页面不再加载）。

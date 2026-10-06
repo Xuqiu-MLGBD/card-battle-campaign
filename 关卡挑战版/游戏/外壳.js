@@ -181,7 +181,15 @@
          —— 等 load.js 在 readyState=complete 后把它亮出来再点。load.js 一摘，就**没人亮它了**，
        于是这句永远 return，**整局都进不去**（实测踩到：血量、法力全空，`#contents` 一直 hidden）。
        我们本来就是要「跳过这个门槛」，所以直接点：**元素不需要可见，`click()` 照样触发它的处理器**。 */
-    gate.click();
+    /* ⚠ 2026-10-05（批次 D）：`gate.click()` 原来是为了跑**上游那个 onclick**——
+       它既切主菜单、也可能进教程。那个处理器写在 `src/scripts/elementsController.js` 里，
+       而那个文件已经**整个删除**了：再点它就是一个没有任何处理器的空元素，点了什么都不发生，
+       门槛层（"Click anywhere to continue..."）会一直盖在页面上挡住所有点击。
+       所以现在**我们自己负责把它收掉**：先照旧点一下（万一还有处理器就顺带走一遍），
+       然后无条件隐藏 —— 这是我们的生命周期该干的事（见 说明/15 第 ② 件）。 */
+    try { gate.click(); } catch (e) {}
+    gate.style.display = 'none';
+    gate.style.visibility = 'hidden';
   }
 
   function boot() {
@@ -402,7 +410,7 @@
 
     overlay.appendChild(panel);
     overlay.onclick = function (e) { if (e.target === overlay) overlay.classList.remove('on'); };
-    W.document.body.appendChild(overlay);
+    ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(overlay);
     return list;
   }
 
@@ -547,7 +555,7 @@
 
     // 等上游的胜利特效演完再浮出来
     W.setTimeout(function () { bar.classList.add('on'); }, 3500);
-    W.document.body.appendChild(bar);
+    ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(bar);
   }
 
   /* ------------------------------ 入口接线 ------------------------------ */
@@ -563,87 +571,284 @@
    *     界面（SLOT_COUNT）与引擎（状态.场上上限）都读它。
    * 两条路都是整页重载：原地重开要清一堆脚本作用域的旧状态（见本文件头那段说明）。
    */
-  var mainEl = null, startEl = null, codexEl = null;
+  var mainEl = null, startEl = null, codexEl = null, creditsEl = null, settingsEl = null, importEl = null;
 
-  function 主入口(名, 说明, 点) {
-    var b = el('button', 'hsm-card');
-    b.appendChild(el('div', 'hsm-name', 名));
-    b.appendChild(el('div', 'hsm-desc', 说明));
-    b.onclick = 点;
-    return b;
+  /* ==================== 美术方向（2026-10-06）：主界面（图一）· 选关（图二）====================
+     参考是《空洞骑士》那两屏的**骨架**，不是它的图：
+       主界面：朴素背景 + **左侧一列细字**（开始游戏 / 卡牌图鉴 / 卡组导入 / 设置 / 开源与致谢），
+               右上角一块标题（Chapter / 副题那种），左下角一行提示，右下角一行操作图例；
+       选关：  顶部标题 + 一行说明，**五张竖卡横排**（关名 / 难度副题 / 占位图 / 说明），
+               当前那张底下挂一个 ▾「当前」，底部一行当前关的说明，右下角◀▶换选、回车开始。
+     **图全部用占位框**（虚线 + 「占位图」字样）：美术图到位后只替换 `.mn-art` / `.sl-art` 的背景即可。
+     所有新类名走 `mn-` / `sl-` 前缀，与旧样式不打架；旧的三块入口（图鉴 / 开始 / 更多）由这一版取代。 */
+  var 美术CSS = [
+    /* —— 主界面 —— */
+    '#hs-mainmenu{position:fixed;inset:0;z-index:9990;display:none;color:#d9d2c4;',
+    'background:#1a1614;}',                       /* 朴素底色：背景图待提供时先用纯色 */
+    '#hs-mainmenu.on{display:block;}',
+    '#hs-mainmenu .mn-bg{position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 40%,#241f1c 0%,#141110 70%,#0d0b0a 100%);}',
+    '#hs-mainmenu .mn-art{position:absolute;inset:0;border:0;background-image:none;}',
+    /* 占位提示：整屏背景图没来时，角落留一行小字说明这里将来放什么 */
+    '#hs-mainmenu .mn-artnote{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);',
+    'font-size:12px;letter-spacing:3px;color:#4a423c;border:1px dashed #3a332e;padding:10px 18px;border-radius:4px;}',
+    '#hs-mainmenu .mn-title{position:absolute;right:6%;top:12%;text-align:right;}',
+    '#hs-mainmenu .mn-app{font:400 44px/1 "Times New Roman",Georgia,"Songti SC",serif;letter-spacing:10px;color:#e8dcc6;}',
+    '#hs-mainmenu .mn-sub{margin-top:10px;font:400 20px/1 Georgia,"Songti SC",serif;letter-spacing:6px;color:#b9ac93;}',
+    '#hs-mainmenu .mn-list{position:absolute;left:7%;top:34%;display:flex;flex-direction:column;gap:2px;}',
+    '#hs-mainmenu .mn-item{appearance:none;background:none;border:0;padding:4px 0;text-align:left;cursor:pointer;',
+    'font:400 21px/1.85 Georgia,"Songti SC","Microsoft YaHei",serif;letter-spacing:2px;color:#a89a86;}',
+    '#hs-mainmenu .mn-item:hover,#hs-mainmenu .mn-item:focus{color:#f2e7cf;outline:none;}',
+    /* 当前项左边那个小箭头（图一聚焦项的写法） */
+    '#hs-mainmenu .mn-item:hover::before,#hs-mainmenu .mn-item:focus::before{content:"‣ ";color:#c8b184;}',
+    '#hs-mainmenu .mn-foot{position:absolute;left:7%;bottom:6%;font:400 13px/1 Georgia,serif;letter-spacing:2px;color:#6d6357;}',
+    '#hs-mainmenu .mn-keys{position:absolute;right:6%;bottom:6%;font:400 13px/1 Georgia,serif;letter-spacing:2px;color:#6d6357;}',
+    /* —— 选关（图二）—— */
+    '#hs-start{position:fixed;inset:0;z-index:9991;display:none;color:#d9d2c4;background:rgba(12,10,9,.94);}',
+    '#hs-start.on{display:block;}',
+    '#hs-start .sl-wrap{position:absolute;inset:0;padding:4vh 4vw;box-sizing:border-box;display:flex;flex-direction:column;}',
+    '#hs-start .sl-title{font:400 40px/1 Georgia,"Songti SC",serif;letter-spacing:12px;color:#e8dcc6;}',
+    '#hs-start .sl-note{margin:10px 0 0;font:400 15px/1.6 Georgia,"Songti SC",serif;letter-spacing:1px;color:#9a8f7e;}',
+    '#hs-start .sl-row{display:flex;gap:14px;justify-content:center;align-items:flex-end;flex:1;padding:3vh 0 0;}',
+    '#hs-start .sl-card{position:relative;width:15%;min-width:150px;cursor:pointer;border:1px solid #4a423a;',
+    'background:rgba(20,17,15,.6);padding:10px 10px 12px;transition:border-color .15s,background .15s,transform .15s;}',
+    '#hs-start .sl-card:hover{border-color:#8d7c5c;background:rgba(32,27,23,.75);}',
+    '#hs-start .sl-card.sel{border-color:#cbb489;background:rgba(38,32,26,.85);transform:translateY(-4px);}',
+    '#hs-start .sl-card.lock{opacity:.42;cursor:not-allowed;}',
+    '#hs-start .sl-name{font:400 17px/1.35 Georgia,"Songti SC",serif;letter-spacing:2px;color:#e8dcc6;text-align:center;}',
+    '#hs-start .sl-tier{margin-top:4px;font:400 13px/1.4 Georgia,serif;letter-spacing:1px;color:#9a8f7e;text-align:center;}',
+    /* 占位图：虚框 + 字样（美术图到位后把这里换成 background-image） */
+    '#hs-start .sl-art{margin:10px 0;aspect-ratio:3/4;border:1px dashed #5c5246;border-radius:2px;',
+    'display:flex;align-items:center;justify-content:center;color:#5c5246;font:400 12px/1 Georgia,serif;letter-spacing:2px;',
+    'background:linear-gradient(160deg,#221d19,#171412);}',
+    '#hs-start .sl-desc{margin-top:2px;font:400 12px/1.6 Georgia,"Microsoft YaHei",sans-serif;color:#8d8272;text-align:center;min-height:3.2em;}',
+    '#hs-start .sl-mark{margin-top:6px;text-align:center;font:400 12px/1 Georgia,serif;letter-spacing:2px;color:#cbb489;visibility:hidden;}',
+    '#hs-start .sl-card.sel .sl-mark{visibility:visible;}',
+    '#hs-start .sl-clear{margin-top:6px;text-align:center;font:400 12px/1 Georgia,serif;letter-spacing:1px;color:#7f9a72;}',
+    '#hs-start .sl-bar{margin-top:2vh;display:flex;align-items:center;gap:14px;border-top:1px solid #3a332c;padding-top:12px;}',
+    '#hs-start .sl-line{flex:1;font:400 15px/1.5 Georgia,"Songti SC",serif;letter-spacing:1px;color:#c3b69f;}',
+    '#hs-start .sl-nav{appearance:none;background:none;border:1px solid #4a423a;color:#c3b69f;cursor:pointer;',
+    'font:400 18px/1 Georgia,serif;padding:6px 14px;}',
+    '#hs-start .sl-nav:hover{border-color:#cbb489;color:#f2e7cf;}',
+    '#hs-start .sl-go{appearance:none;background:#2b241d;border:1px solid #8d7c5c;color:#f2e7cf;cursor:pointer;',
+    'font:400 15px/1 Georgia,"Songti SC",serif;letter-spacing:2px;padding:9px 22px;}',
+    '#hs-start .sl-go:hover{background:#3a3126;}',
+    '#hs-start .sl-free{margin-top:2vh;}',
+    '#hs-start .sl-freeh{font:400 15px/1 Georgia,"Songti SC",serif;letter-spacing:3px;color:#9a8f7e;margin-bottom:8px;}',
+    '#hs-start .sl-mini{display:flex;gap:10px;}',
+    '#hs-start .sl-mini > *{width:auto;min-width:118px;flex:0 0 auto;padding:8px 14px;text-align:center;font:400 14px/1.5 Georgia,"Songti SC",serif;}',
+    '#hs-start .sl-back{position:absolute;right:4vw;bottom:3vh;}',
+    /* —— 小浮层：开源与致谢 / 设置 / 卡组导入 —— */
+    '.hsx-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9993;width:min(680px,92vw);',
+    'background:rgba(24,20,18,.97);border:1px solid #4a423a;padding:22px 26px;color:#d9d2c4;display:none;}',
+    '.hsx-panel.on{display:block;}',
+    '.hsx-panel h3{margin:0 0 12px;font:400 22px/1 Georgia,"Songti SC",serif;letter-spacing:4px;color:#e8dcc6;}',
+    '.hsx-panel p{margin:8px 0;font:400 14px/1.9 Georgia,"Songti SC","Microsoft YaHei",serif;color:#b8ab95;}',
+    '.hsx-panel a{color:#cbb489;}',
+    '.hsx-panel .hsx-close{position:absolute;right:14px;top:12px;appearance:none;background:none;border:0;color:#9a8f7e;',
+    'font:400 20px/1 Georgia,serif;cursor:pointer;}',
+    '.hsx-panel .hsx-close:hover{color:#f2e7cf;}',
+  ].join('');
+
+  function injectArt() {
+    var d = W.document;
+    if (d.getElementById('hs-art-style')) return;
+    var s = d.createElement('style');
+    s.id = 'hs-art-style';
+    s.textContent = 美术CSS;
+    (d.head || d.documentElement).appendChild(s);
   }
 
+  /* 一句话提示（原先跟着主页面一起定义，这一版主页面重排了，挪到这儿） */
   function 说一句(文字) {
     var t = W.document.getElementById('hsm-toast');
-    if (!t) { t = el('div'); t.id = 'hsm-toast'; W.document.body.appendChild(t); }
+    if (!t) { t = el('div'); t.id = 'hsm-toast'; ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(t); }
     t.textContent = 文字;
     t.classList.add('on');
     W.setTimeout(function () { t.classList.remove('on'); }, 1600);
   }
 
+  function 小浮层(id, 标题, 段落) {
+    var wrap = el('div', 'hsx-panel');
+    wrap.id = id;
+    var c = el('button', 'hsx-close', '✕');
+    c.onclick = function () { wrap.classList.remove('on'); };
+    wrap.appendChild(c);
+    wrap.appendChild(el('h3', null, 标题));
+    (段落 || []).forEach(function (x) {
+      if (typeof x === 'string') { wrap.appendChild(el('p', null, x)); return; }
+      var p = el('p');
+      if (x.链) { var a = W.document.createElement('a'); a.href = x.链; a.target = '_blank'; a.rel = 'noopener'; a.textContent = x.文字; p.appendChild(a); }
+      else p.textContent = x.文字;
+      wrap.appendChild(p);
+    });
+    ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(wrap);
+    return wrap;
+  }
+
+  /* 开源与致谢（用户 2026-10-06 给的原文，别改写） */
+  function openCredits() {
+    if (!creditsEl) {
+      creditsEl = 小浮层('hs-credits', '开源与致谢', [
+        { 文字: '开源：', 链: 'https://github.com/Xuqiu-MLGBD/card-battle-campaign' },
+        '致谢：感谢行樂、洛璃的代码支持，月月鸟、tosaki、糯米等 discord 社群作者们的设计支持。',
+      ]);
+    }
+    creditsEl.classList.add('on');
+  }
+
+  /* 设置：主页面这一层只管"数据与版本"（局内的设置按钮另有那套菜单） */
+  function openSettings() {
+    if (!settingsEl) {
+      settingsEl = 小浮层('hs-mainsettings', '设置', []);
+      var 清 = el('button', 'sl-nav', '清空关卡进度');
+      清.onclick = function () {
+        try { if (typeof clearProgress === 'function') clearProgress(); } catch (e) {}
+        说一句('进度已清空（刷新后生效）');
+      };
+      var 版 = el('p', null, '构建版本：' + (W.HS_BUILD || '（开发中）'));
+      settingsEl.appendChild(清);
+      settingsEl.appendChild(版);
+      settingsEl.appendChild(el('p', null, '进度存在浏览器本机（localStorage），清缓存即丢失。'));
+    }
+    settingsEl.classList.add('on');
+  }
+
+  /* 卡组导入：**占位**（用户 2026-10-06 把它列进了主页面，具体规则待定） */
+  function openDeckImport() {
+    if (!importEl) {
+      importEl = 小浮层('hs-deckimport', '卡组导入', [
+        '这里将来放"导入自己的卡组"：粘贴卡组码或选一份文件，校验后进入对局。',
+        '当前版本还没有这套规则，先用占位提示 —— 免得点了没反应（那类"点了没反应"我们踩过太多次）。',
+      ]);
+    }
+    importEl.classList.add('on');
+  }
+
+  /* 主页面：图一的排布 —— 朴素背景 + 左下起一列细字 + 右上标题块 */
   function buildMain() {
     var wrap = el('div');
     wrap.id = 'hs-mainmenu';
-    wrap.appendChild(el('div', 'hsm-title', W.HS_APP_NAME || '卡牌对战'));
-    wrap.appendChild(el('div', 'hsm-sub', '单人 · 无联机 · 进度存在本机'));
+    wrap.appendChild(el('div', 'mn-bg'));
+    var art = el('div', 'mn-art');
+    art.appendChild(el('div', 'mn-artnote', '背景图占位（待提供）'));
+    wrap.appendChild(art);
 
-    var grid = el('div', 'hsm-grid');
-    grid.appendChild(主入口('卡牌图鉴', '这套牌里有什么：费用 / 身材 / 词条 / 说明', openCodex));
-    grid.appendChild(主入口('开始游戏', '挑战关五关（格数逐关 +1）· 自由关三档（1 / 3 / 5 格）', openStart));
-    grid.appendChild(主入口('更多内容', '暂未开放', function () { 说一句('更多内容：暂未开放'); }));
-    wrap.appendChild(grid);
+    var t = el('div', 'mn-title');
+    t.appendChild(el('div', 'mn-app', W.HS_APP_NAME || '卡牌对战'));
+    t.appendChild(el('div', 'mn-sub', '关卡挑战'));
+    wrap.appendChild(t);
 
-    var foot = el('div', 'hsm-foot');
-    foot.appendChild(el('small', null, '关卡进度存在浏览器本机（localStorage），清缓存即丢失'));
-    wrap.appendChild(foot);
+    var list = el('div', 'mn-list');
+    [
+      ['开始游戏', openStart],
+      ['卡牌图鉴', openCodex],
+      ['卡组导入', openDeckImport],
+      ['设置', openSettings],
+      ['开源与致谢', openCredits],
+    ].forEach(function (项) {
+      var b = el('button', 'mn-item', 项[0]);
+      b.onclick = 项[1];
+      list.appendChild(b);
+    });
+    wrap.appendChild(list);
 
-    W.document.body.appendChild(wrap);
+    wrap.appendChild(el('div', 'mn-foot', '进度存在本机 · 单人 · 无联机'));
+    wrap.appendChild(el('div', 'mn-keys', '点左边的字进入 · 回车开始当前关'));
+    wrap.classList.add('on');
+
+    ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(wrap);
     mainEl = wrap;
     return wrap;
   }
 
-  /* 开始游戏：一块浮层里两条路（挑战关的行渲染复用 renderLevels，不抄第二份） */
+  /* 选关：图二的排布 —— 五张竖卡横排 + 当前标记 + 底部说明 + ◀▶ + 自由关一行。
+     卡里的数值/说明**全部读关卡表**（卡库.js 乙段），不在这里抄第二份。 */
+  var 选中关 = 1;                 // 当前选中的是第几关（图二里"Current"那张）
+
+  function 造选关卡(lv, 序) {
+    var 卡 = el('div', 'sl-card');
+    卡.dataset.关 = String(lv.id);
+    var 开 = (typeof isUnlocked === 'function') ? isUnlocked(lv.id) : true;
+    if (!开) 卡.classList.add('lock');
+    卡.appendChild(el('div', 'sl-name', lv.name));
+    卡.appendChild(el('div', 'sl-tier', (TIER_NAME && TIER_NAME[lv.tier]) || ('难度 ' + lv.tier) + ' · ' + lv.slots + ' 格'));
+    var 图 = el('div', 'sl-art', '占位图');
+    卡.appendChild(图);
+    卡.appendChild(el('div', 'sl-desc', lv.blurb || ''));
+    var 标 = el('div', 'sl-mark', '▾ 当前');
+    卡.appendChild(标);
+    if (typeof isCleared === 'function' && isCleared(lv.id)) 卡.appendChild(el('div', 'sl-clear', '已通关'));
+    卡.onclick = function () {
+      if (!开) { 说一句('这一关还没解锁：先通过第 ' + (lv.id - 1) + ' 关'); return; }
+      选中一关(lv.id);
+    };
+    卡.ondblclick = function () { if (开) enterLevel(lv.id); };
+    return 卡;
+  }
+
+  function 选中一关(id) {
+    选中关 = id;
+    renderStart();
+  }
+
+  function renderStart() {
+    var d = W.document, 行 = d.getElementById('hsp-levels');
+    if (!行) return;
+    行.innerHTML = '';
+    (W.CAMPAIGN_LEVELS || []).forEach(function (lv) { 行.appendChild(造选关卡(lv)); });
+    var 当 = (W.CAMPAIGN_LEVELS || []).filter(function (lv) { return lv.id === 选中关; })[0];
+    var 线 = d.getElementById('sl-line');
+    if (线) 线.textContent = 当 ? (当.name + '：' + (当.blurb || '')) : '';
+    // 标记当前那张
+    Array.prototype.forEach.call(行.children, function (卡) {
+      卡.classList.toggle('sel', Number(卡.dataset.关) === 选中关);
+    });
+  }
+
   function openStart() {
     if (!startEl) {
       startEl = el('div');
       startEl.id = 'hs-start';
-      var p = el('div', 'hsp-panel');
-      p.appendChild(el('h2', null, '开始游戏'));
+      var w = el('div', 'sl-wrap');
+      w.appendChild(el('div', 'sl-title', '选关'));
+      w.appendChild(el('div', 'sl-note', '关卡格数逐关 +1（第一关双方各 1 格 … 第五关 5 格）；随时可以回来换。'));
 
-      var h1 = el('div', 'hsp-h', '挑战关');
-      h1.appendChild(el('small', null, '五关 · 每关双方格数逐关 +1（1 → 5）'));
-      p.appendChild(h1);
-      var lvBox = el('div');
-      lvBox.id = 'hsp-levels';
-      p.appendChild(lvBox);
+      var 行 = el('div', 'sl-row');
+      行.id = 'hsp-levels';
+      w.appendChild(行);
 
-      var h2 = el('div', 'hsp-h', '自由关');
-      h2.appendChild(el('small', null, '双方格数一样，自己挑一档'));
-      p.appendChild(h2);
-      var seg = el('div', 'hsp-seg');
+      var 条 = el('div', 'sl-bar');
+      条.id = 'sl-bar';
+      var 前 = el('button', 'sl-nav', '◀');
+      前.onclick = function () { var n = Math.max(1, 选中关 - 1); 选中一关(n); };
+      var 线 = el('div', 'sl-line');
+      线.id = 'sl-line';
+      var 后 = el('button', 'sl-nav', '▶');
+      后.onclick = function () { var n = Math.min((W.CAMPAIGN_LEVELS || []).length, 选中关 + 1); 选中一关(n); };
+      var 开 = el('button', 'sl-go', '开始这一关');
+      开.onclick = function () { enterLevel(选中关); };
+      条.appendChild(前); 条.appendChild(后); 条.appendChild(线); 条.appendChild(开);
+      w.appendChild(条);
+
+      var 自由 = el('div', 'sl-free');
+      自由.appendChild(el('div', 'sl-freeh', '自由关 · 不计进度'));
+      var 迷你 = el('div', 'sl-mini');
       [1, 3, 5].forEach(function (n) {
-        var b = el('button', 'campaign-btn', n + ' 格');
+        var b = el('button', 'sl-nav', '双方各 ' + n + ' 格');
         b.onclick = function () { enterFree(n); };
-        seg.appendChild(b);
+        迷你.appendChild(b);
       });
-      p.appendChild(seg);
+      自由.appendChild(迷你);
+      w.appendChild(自由);
 
-      var foot = el('div', 'hsp-foot');
-      /* 老的那个「关卡列表」浮层没删 —— 它身上有**清空进度**和一行行图文说明，
-         这里给它留一个入口（主页面是主要入口，浮层当"简版列表 + 设置"用）。 */
-      var listBtn = el('button', 'campaign-btn ghost', '关卡列表 / 清空进度');
-      listBtn.onclick = function () { startEl.classList.remove('on'); openSelect(); };
-      foot.appendChild(listBtn);
-      var back = el('button', 'campaign-btn ghost', '返回主页面');
-      back.onclick = function () { startEl.classList.remove('on'); };
-      foot.appendChild(back);
-      p.appendChild(foot);
+      var 退 = el('button', 'sl-nav sl-back', '返回主页面');
+      退.onclick = function () { startEl.classList.remove('on'); };
+      w.appendChild(退);
 
-      startEl.appendChild(p);
-      startEl.onclick = function (e) { if (e.target === startEl) startEl.classList.remove('on'); };
-      W.document.body.appendChild(startEl);
+      startEl.appendChild(w);
+      ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(startEl);
     }
-    renderLevels(W.document.getElementById('hsp-levels'));
+    renderStart();
     startEl.classList.add('on');
   }
 
@@ -693,7 +898,7 @@
 
       codexEl.appendChild(p);
       codexEl.onclick = function (e) { if (e.target === codexEl) codexEl.classList.remove('on'); };
-      W.document.body.appendChild(codexEl);
+      ((W.HS_UI_宿主 && W.HS_UI_宿主()) || W.document.body).appendChild(codexEl);
     }
     codexEl.classList.add('on');
   }
@@ -707,9 +912,15 @@
 
   function addMenuButton() {
     var d = W.document;
+    if (!d.body) return false;
+    /* ⚠ 2026-10-05（用户：这些无用的显示删去）：上游那个 `#mainmenu`
+       （Play · Tutorial · How To Play · Shop · 开包 · 金币……）**已从 index.html 整块删除**。
+       原来这里写着"找不到 `#mainmenu` 就当失败" —— 宿主一没，主页面就不建了，
+       于是**不带关卡参数打开时是一屏空白**（`#contents` 是 hidden、菜单又没有）。
+       主页面本来就是我们自己的（`buildMain` → `#hs-mainmenu`），
+       上游那份只是"顺手收掉"，不该是建它的前提。 */
     var menu = d.getElementById('mainmenu');
-    if (!menu || !d.body) return false;
-    menu.style.display = 'none';        // 上游主菜单整块不用了（我们自己的主页面见上）
+    if (menu) menu.style.display = 'none';
     buildMain();
     return true;
   }
@@ -761,7 +972,14 @@
     set('.playerHeroHealth', { visibility: 'visible', opacity: '1' });
     set('.opposingHeroHealth', { visibility: 'visible', opacity: '1' });
 
-    try { W.isInGame = true; } catch (e) { /* 上游变量，理论上一定在 */ }
+    try { W.isInGame = true; } catch (e) { /* 现在是我们自己的全局量（见 游戏/回合.js） */ }
+    /* ★ 手上没牌就补发一次（批次 D 之后发牌归 游戏/回合.js；它已在载入期发过，
+       这里是"进对局"这条路的兜底 —— 页内换关、或发牌被谁清掉了都能救回来）。 */
+    try {
+      var 手 = d.getElementById('cards');
+      if (手 && 手.querySelectorAll(':scope > .card').length === 0 &&
+          W.HS_TURN && typeof W.HS_TURN.开局发牌 === 'function') W.HS_TURN.开局发牌();
+    } catch (e) { /* 补发失败不该挡住进对局 */ }
 
     /* ★ 补一次 attack()：上游只在 playerTurn() 里调它，而 playerTurn() 要等"结束回合 → 敌方
        走完"才会被调用 —— 我们是直接进对局的，不补这一下，**第一回合场上单位既没有绿光、
@@ -769,19 +987,42 @@
     try { if (typeof W.attack === 'function') W.attack(); } catch (e) { /* 不影响进对局 */ }
   }
 
-  // 在关卡里时：跳过「首次强制教程」，选完关直接进对局
-  function hookEntry() {
-    var btn = W.document.getElementById('preventCORS');
-    if (!btn || typeof btn.onclick !== 'function') return false;
-    var up = btn.onclick;
+  /* ------------------------------ 回主页面 ------------------------------
+     用户 2026-10-05："在关卡中应该设置退出到主菜单的选项"。
+     它必须是**页内**完成的（沙盒里改 location 会把平台聊天页导航掉），并且要能应付
+     "这一局是直接进关卡的、主页面根本没建过"这种情况（缺了就现场建）。 */
+  function 回主菜单() {
+    try {
+      if (typeof W.HS_APPLY_LEVEL === 'function') W.HS_APPLY_LEVEL(0, 0);   // 关卡复位（格数/牌组都回默认）
+    } catch (e) {}
+    try { if (typeof W.CAMPAIGN_REBOOT === 'function') W.CAMPAIGN_REBOOT(); } catch (e) {}
+    var d = W.document;
+    var 主 = d && d.getElementById('hs-mainmenu');
+    if (!主) { try { buildMain(); 主 = d.getElementById('hs-mainmenu'); } catch (e) {} }
+    if (主) 主.style.display = '';
+    var 内容 = d && d.getElementById('contents');
+    if (内容) 内容.style.visibility = 'hidden';
+    /* 关卡状态也复位 —— 这样从主页面再点「开始游戏」是一局干净的 */
+    LEVEL = null; FREE = null;
+    return !!主;
+  }
 
-    btn.onclick = function (e) {
-      // 上游：hasPlayedTutorial 为空 → 强制教程；否则 → 显示主菜单
-      // 打关卡 / 打自由关时把哨兵置成非空，走主菜单那条分支，然后我们直接接管进对局
-      if (LEVEL || FREE) W.hasPlayedTutorial_deserailized = 'campaign';
-      up.call(this, e);
-      if (LEVEL || FREE) W.setTimeout(enterFight, 300);
-    };
+  // 在关卡里时：跳过「首次强制教程」，选完关直接进对局
+  /* ⚠⚠ 2026-10-05（批次 D）**这一条曾经整段失效**，而且症状很隐蔽：
+     它原来是"**包住 `#preventCORS` 的 onclick**，再借玩家点一下那个门槛来接管入口"——
+     而那个 onclick 是 `src/scripts/elementsController.js` 挂的，那个文件**已被删除**。
+     于是 `btn.onclick` 是 null → 本函数第一句就 `return false` → **`enterFight` 永远不会被安排**
+     → `#contents` 一直是 `visibility:hidden`。
+     用户拍到的画面正是它：整块对局区没亮出来，屏幕上只剩"被搬进 #game"的双方名字与血量数字
+     （它们不在 #contents 里，所以藏不住）。
+     教训与之前几次一样：**"依赖别人挂上来的东西"在删掉那个人之后会静默失效**，
+     所以入口必须归我们自己 —— 不再看任何 onclick。 */
+  function hookEntry() {
+    if (!(LEVEL || FREE)) return false;                 // 不在关卡/自由关：走主页面那条路
+    /* 上游：hasPlayedTutorial 为空 → 强制教程；否则 → 显示主菜单。
+       我们打关卡时把哨兵置成非空，等于告诉上游"教程过了"，然后直接接管进对局。 */
+    if (!W.hasPlayedTutorial_deserailized) W.hasPlayedTutorial_deserailized = 'campaign';
+    W.setTimeout(enterFight, 300);
     return true;
   }
 
@@ -813,6 +1054,7 @@
     var 在局里 = !!(LEVEL || FREE);
 
     injectStyle();
+    injectArt();      // 美术方向那一套（主界面/选关/小浮层）单独一张样式表，见 美术CSS
     listEl = buildOverlay();
     /* ★★ 骨架自愈（2026-10-04）：真机上出现过"骨架在、id 不在"（报告：`关键id缺 playerhero`），
        而上游 index.js / attack.js 全是按 id 找元素 —— id 一丢，结束回合/设置/血量一起失灵。
@@ -843,7 +1085,14 @@
       isUnlocked: isUnlocked,
       markCleared: markCleared,
       tierName: function () { return TIER_NAME[TIER]; },
-      enterFight: enterFight        // 自测用：直接进对局那段是纯 DOM 状态摆放，可单独验
+      enterFight: enterFight,       // 自测用：直接进对局那段是纯 DOM 状态摆放，可单独验
+      /* 回到主页面（用户 2026-10-05："在关卡中应该设置退出到主菜单的选项"）。
+         ⚠ 一开始这里写的是 `换局({})` —— 那**不对**：`换局` 在没有 `HS_RESTART_HOOK` 时会
+         `location.href = '?free=3'`，也就是**整页重载**成自由关，不是回主页面；
+         而且"直接进关卡"这条路（`?level=N`）**从来没建过主页面** —— 于是回来是一片空白。
+         所以这一步自己写清楚：复位关卡状态 → 亮出主页面（缺了就现场建）→ 收掉对局区；
+         **沙盒里一样是页内完成，绝不改 location**（沙盒改 location 会把平台聊天页导航掉）。 */
+      回主菜单: 回主菜单
     };
 
     /* 主菜单被上游隐藏/显示时，我的按钮跟着走（按钮就在 #mainmenu 里，天然跟随，不需要额外处理） */

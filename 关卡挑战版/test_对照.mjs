@@ -64,6 +64,7 @@ const 源 = {
   事件: 读('游戏/事件.js'),
   界面: 读('游戏/界面.js'),
   演出: 读('游戏/演出.js'),
+  回合: 读('游戏/回合.js'),          // 2026-10-05 批次 D：回合一族（取代 index.js + attack.js）
   上游attack: 取('src/scripts/attack.js'),
   上游AI: 取('src/scripts/AI.js'),
   上游卡效: 取('src/scripts/card_effects.js'),
@@ -416,10 +417,18 @@ const 条 = (规则, 老路径, 新引擎, 判定, 结论) => {
 /* --- 17 对手的真手牌 --- */
 {
   const 老有手牌 = /enemyHand/.test(源.界面);
-  const 上游假装抓牌 = /computerDeck\.cards\.shift\(\)/.test(源.上游index);
-  const 上游从牌库出牌 = /computerDeck\.cards\[i\]\['mana'\]\s*==\s*manaCapacity/.test(源.上游index);
-  ok(老有手牌 && 上游假装抓牌 && 上游从牌库出牌,
-     '证据齐了：老路径有 enemyHand（叙述用）；上游发牌时对电脑是"shift 掉 3 张"（假装抓牌，那 3 张不进任何手牌）；出牌时直接从 computerDeck.cards 挑');
+  if (有上游['index.js']) {
+    const 上游假装抓牌 = /computerDeck\.cards\.shift\(\)/.test(源.上游index);
+    const 上游从牌库出牌 = /computerDeck\.cards\[i\]\['mana'\]\s*==\s*manaCapacity/.test(源.上游index);
+    ok(老有手牌 && 上游假装抓牌 && 上游从牌库出牌,
+       '证据齐了：老路径有 enemyHand（叙述用）；上游发牌时对电脑是"shift 掉 3 张"（假装抓牌，那 3 张不进任何手牌）；出牌时直接从 computerDeck.cards 挑');
+  } else {
+    /* ⚠ 2026-10-05 批次 D：`index.js` 已**从工程里删除** —— 这条对照的"证据"不再随包分发。
+       改成验"我们自己的实现已经把它换掉了"：敌方出牌与发牌由 游戏/回合.js 负责，
+       而 enemyHand 仍在界面层做叙述（它本来就不是真手牌）。 */
+    ok(老有手牌 && /敌方出一张/.test(源.回合) && /开局发牌/.test(源.回合),
+       'index.js 已删除：对手的起手/出牌改由 游戏/回合.js 实现（enemyHand 仍在界面层，只用于叙述）');
+  }
   条('对手有"真手牌"（起手 3 张、每回合抽 1）',
     '上游电脑**没有手牌**：startGame() 给玩家发 3 张时，同步 `computerDeck.cards.shift()` 掉 3 张 —— ' +
     '那 3 张不进任何手牌、直接消失（等于"假装它也抓了起手"）；真正出牌时它从 computerDeck.cards 里挑费用等于法力上限的那张。' +

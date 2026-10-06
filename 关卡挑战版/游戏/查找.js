@@ -128,22 +128,11 @@
         补++;
       } catch (err) {}
     });
-    /* ★ 两个"提示元素"缺了就**造一个**（不是找，是补）。
-       为什么必须要它们存在：上游"结束回合"的回调是一条**直线**调用链 ——
-         `getElementById("gifhint").style.backgroundImage = …` → `getElementById("texthint").innerText = …` → `opponentTurn()`
-       其中任何一句拿到 null 就抛 TypeError，**监听器当场中断**，`opponentTurn()` 永远不会执行
-       （用户 2026-10-04 问的正是这个）。它们只是装饰性的提示条，我们并不显示 ——
-       那就造两个隐藏的空壳顶着，保证上游那两句话不会抛。宁可多个空 div，也不要一颗死按钮。 */
-    ['gifhint', 'texthint'].forEach(function (id) {
-      if (有(id)) return;
-      try {
-        var e = d.createElement('div');
-        e.id = id;
-        e.style.display = 'none';
-        根.appendChild(e);
-        补++;
-      } catch (err) {}
-    });
+    /* ⚠ 2026-10-05：这一段原来给 `#gifhint` / `#texthint` 造隐藏空壳 —— 为了让**上游那条
+       "结束回合"直线链**（`gifhint` → `texthint` → `opponentTurn()`）不中途抛错。
+       现在那条链已经不存在了（`index.js` 删除、回合归 游戏/回合.js、结束回合按钮也是我们绑的），
+       那两个空壳也随 index.html 一起删了 —— 所以这段一并移除，免得它又"凭空造出两个元素"。
+       自愈的职责只剩一件：**把上游遗留的 id 按结构补回去**（比如 `.playerHeroHealth` → `#playerhero`）。 */
     if (补) 报自愈({ 自愈: '补齐骨架 id', 补了: 补, 说明: '宿主环境里 id 不可靠，按结构补回' });
     return 补;
   }
@@ -217,6 +206,18 @@
   W.HS_UI_找id = 找id;
   W.HS_UI_全部 = 全部;
   W.HS_UI_根 = 根元素;
+
+  /* ★ **覆盖宿主**：所有"浮在牌桌上的覆盖层"（演出层 / 提示条 / 各种条与面板）都该挂这里。
+     优先"本作品的根节点"，独立网页才落 `document.body`。
+     为什么（沙盒同层卡指南 §5.4「所有内容挂在本作品根节点」）：沙盒的舞台根 `z-index` 是 2147483000，
+     挂在 `document.body` 的覆盖层是它的**兄弟且层级更低**，而舞台里 `#game` 有一层不透明底色铺满整屏 ——
+     于是覆盖层**画在底色下面**：元素在、样式对、`getBoundingClientRect` 也有，玩家却一个都看不见
+     （用户 2026-10-05："各阶段提示词、抽牌、执行、出牌提示都没展示"就是这个）。
+     注意：它必须在**运行时**取（加载期 查找.js 可能还没跑）。 */
+  W.HS_UI_宿主 = function () {
+    try { var r = 根元素(); if (r) return r; } catch (e) {}
+    return (d && d.body) || null;
+  };
   W.HS_UI_补齐 = 补齐骨架id;
   W.HS_UI_点击日志 = function () { return 点击日志.slice(); };
   /* 供"本局信息"直接打印的那两行（放这里是为了给 界面.js 省长度：沙盒单条规则卡得很死）。

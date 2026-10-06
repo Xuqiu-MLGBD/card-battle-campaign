@@ -49,7 +49,6 @@
 #gifhint,
 .playerhero,
 .opponenthero,
-.playerheropower,
 .player-deck,
 .computer-deck,
 .enemycard,
@@ -261,6 +260,146 @@ body {
 }
 
 /* ================================================================
+ * 段 1.5 · 布局（2026-10-05 批次 E：`styles.css` 出列，声明迁到本文件）
+ *
+ * 这一段把 `styles.css` 里**仍然在起作用**的声明搬过来了 —— 上游那张 3273 行的表
+ * 其余部分早被"段 2"逐条覆写，摘掉它对画面毫无影响。
+ * 搬法（可复现）：把那张表整张留着量一遍 21 个关键元素（矩形 / position / font-size），
+ * 再**在原位插入本段、同时摘掉那张表**量第二遍 —— **两遍零差异**才算过。
+ * 单位与取值一律照抄原声明（不做"重写取值"），所以这次是**迁移**，不是重新设计。
+ *
+ * ★ 位置很关键：必须在"段 2"**之前**。原来是 styles.css → 本文件，
+ *   段 2 里我们对卡面/右栏/手牌/英雄的覆写要仍然压在这一段之上。
+ * ================================================================ */
+
+/* 双方英雄框：绝对定位的两个角（也是"玩家本人"这个可攻击目标的落点） */
+.playerhero {
+	position: absolute;
+	width: 11%;
+	height: 17%;
+	left: 46.75%;
+	top: 67.75%;
+	z-index: 20;
+	background-repeat: no-repeat;
+	background-size: contain;
+}
+
+.opponenthero {
+	position: absolute;
+	width: 11%;
+	height: 17%;
+	left: 46.75%;
+	top: 9.75%;
+	z-index: 11;
+	background-repeat: no-repeat;
+	background-size: contain;
+}
+
+/* 手牌卡与外框：`.card-face` 铺满整张卡，卡名缎带/数值块都相对它定位 */
+.card {
+	position: relative;
+	width: 100px;
+	height: 150px;
+	border-radius: 8px;
+	float: left;
+}
+
+.card-face {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	background-size: contain;
+	background-repeat: no-repeat;
+	pointer-events: none;
+}
+
+/* 手牌那张"沉下去 5px"的观感（上游是逐张 nth-child 写的，视觉效果一样、这里一次写完） */
+.card > .card-face {
+	transform: translateY(5px);
+}
+
+.cardAttackValue { float: left; width: 1.3rem; height: 1rem; position: absolute; bottom: 0; left: 0; margin: 0 auto; font-size: 15px; font-weight: bold; }
+.cardHealthValue { float: right; width: 1.3rem; height: 1rem; position: absolute; bottom: 0; right: 0; margin: 0 auto; font-size: 15px; font-weight: bold; }
+.cardManaValue { float: right; width: 1.5rem; height: 1.5rem; position: absolute; top: 2px; left: 2px; margin: 0 auto; border-radius: 100%; text-align: center; font-size: 20px; font-weight: bold; }
+.cardInfoValue { width: 100px; height: 30%; position: absolute; bottom: 0; left: 0; margin: auto; text-align: center; font-size: 8px; font-weight: bold; }
+
+/* 两排战场（落点由 JS 写 left，见 界面.js 的 cellLeft / syncSlots） */
+.board {
+	position: absolute;
+	display: flex;
+	justify-content: space-between;
+	width: 80%;
+	left: 16.25%;
+	top: 6%;
+	padding: 11rem;
+}
+
+.board--player,
+.board--opponent {
+	z-index: 1;
+}
+
+/* 场上随从的盒子 */
+.cardinplay {
+	position: relative;
+	float: left;
+	margin: 0 auto;
+	width: 6.4rem;
+	height: 8.5rem;
+	background-size: cover;
+	background-repeat: no-repeat;
+}
+
+/* 结束回合：位置与字号（颜色与文字由 JS 按回合切换，见 回合.js 的 相位） */
+#endturn {
+	position: absolute;
+	left: 75.5%;
+	top: 42%;
+	width: 8%;
+	height: 7%;
+	font-size: 17px;
+	user-select: none;
+}
+
+/* 双方英雄的血量数字：绝对定位，挂在各自英雄框的右下 */
+.playerHeroHealth,
+.opposingHeroHealth {
+	position: absolute;
+	width: 1.75rem;
+	height: 2rem;
+	padding-left: 0.5rem;
+	font-size: 40px;
+	font-weight: bold;
+	background-size: cover;
+}
+
+.playerHeroHealth { left: 55%; top: 103%; }
+.opposingHeroHealth { left: 55%; top: 80%; }
+
+/* 卡名缎带 */
+.cardNameValue {
+	position: absolute;
+	left: 2.5px;
+	top: 60%;
+	width: 95px;
+	height: 10%;
+	margin: auto;
+	text-align: center;
+	font-size: 8px;
+	font-weight: 700;
+}
+
+/* 手牌卡的可出边框：**颜色就是"出得起 / 出不起"**（行内样式由 界面.js 的 刷可出性 写） */
+.card-border {
+	width: 93px;
+	height: 143px;
+	border: solid 4px rgb(56, 56, 56);
+	border-radius: 8px;
+}
+
+/* ================================================================
  * 段 2 · 简洁窗体（★ 我们的落点）
  *
  * 将来讨论出来的 UI 配布与动效，整块替换这一节即可 —— 段 1 不用动。
@@ -372,27 +511,6 @@ body {
 .legendaryinplay {
 	border: 2px solid #d8b45a !important;
 	border-radius: 8px;
-}
-
-/* --- 英雄技能：整个功能移除（2026-10-02 用户指令） ---
-   上游给双方各做了一个「英雄技能」按钮（`.playerheropower`，2 费打 1），背景是暴雪那张
-   heropower.gif。用户要求**把这个功能整个拿掉**，不是只换图标。
-
-   做法是「藏起来 + 让它不可交互」，而**不是从 DOM 里删掉元素**。原因很实在：
-   上游有十几处 `document.getElementById("playerheropower").style…` /
-   `.classList.remove("canAttack")`（见 `playerTurn()`、`checkForRequiredMana()`、`attack.js`），
-   元素一旦不存在，那些地方会当场 TypeError，整条回合流程都会断。
-   所以这里保留元素、把它彻底退出交互与视觉：
-     · `display:none` —— 不渲染；
-     · `pointer-events:none !important` —— 上游会把它重新设成 `all`（内联样式），
-       只有 `!important` 压得住；
-     · 假血量 99999999 与技能值一起藏掉。
-   `aim.js` 的取消瞄准也同步认 `#playerheropower` 为「已经不是目标」。 */
-.playerheropower,
-#playerheropower {
-	display: none !important;
-	pointer-events: none !important;
-	visibility: hidden !important;
 }
 
 /* --- 载入层 #load：**必须摘掉**（用户 2026-10-02 报的「攻击敌方玩家没有高亮」的根因）
@@ -798,7 +916,10 @@ body {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 6;
+	/* ★ 12 = **压在手牌区之上**（`#cards` 是 9）。原来是 6，于是任务区被手牌区的盒子盖住 ——
+	   自检 ㉚「关键落点没被别的图层盖住」实测报的就是它（盖住者 = `#cards`）。
+	   12 低于卡牌预览(200)与设置抽屉(9995)、高于手牌(9)与棋盘，是"舞台图层的上一层"。 */
+	z-index: 12;
 }
 
 #hs-settings,
@@ -1814,3 +1935,81 @@ body.hs-locked #endturn {
 	z-index: 41;
 }
 
+
+/* --- 设置抽屉：**我们自己的模态**（2026-10-05 批次 E 续）
+   上游那套装饰与定位随 styles.css 一起出列了，所以这里从头写：
+   默认隐藏、打开时是一层压暗的遮罩 + 居中面板。开关由 游戏/菜单.js 加/去 `hs-open` 类。 --- */
+#gamemenu { display: none; }
+
+#gamemenu.hs-open {
+	display: flex;
+	position: fixed;
+	inset: 0;
+	z-index: 9995;
+	align-items: center;
+	justify-content: center;
+	background: rgba(4, 7, 12, .72);
+}
+
+#gamemenuContent {
+	display: none;
+	min-width: 300px;
+	padding: 18px 20px 16px;
+	background: var(--hs-panel);
+	border: 1px solid var(--hs-line);
+	border-radius: 12px;
+	box-shadow: 0 14px 44px rgba(0, 0, 0, .6);
+	text-align: center;
+}
+
+#gamemenu.hs-open #gamemenuContent { display: block; }
+
+#gamemenuTitle {
+	margin-bottom: 14px;
+	font-size: 15px;
+	letter-spacing: 3px;
+	color: var(--hs-text);
+}
+
+#gamemenuContent button {
+	display: block;
+	width: 100%;
+	margin: 8px 0 0;
+	padding: 9px 10px;
+	font-size: 14px;
+	color: var(--hs-text);
+	background: var(--hs-soft);
+	border: 1px solid var(--hs-line);
+	border-radius: 8px;
+	cursor: pointer;
+}
+
+#gamemenuContent button:hover { background: #1e2733; }
+
+/* --- 右栏 chrome 的**反向缩放**：让字实起来（2026-10-05，用户："设置/视角按钮分辨率好模糊"）
+   原因：整个 `#game` 被 `scale(k)` 缩放（k = 视口宽/设计宽，实测 ≈1.024），
+   里面的文字是"先按设计字号光栅化、再被放大 k 倍"，k 非整数时每个字都糊（dpr=1 时最明显）。
+   做法：给这几个"功能条"加 `scale(1/k)`（k 由 界面.js 的 fitStage 写在 `--hs-stage-k` 上）——
+   它们就按 1:1 光栅化，字是实的。
+   ⚠ 代价说清楚：反向缩放后它们的**屏幕尺寸恒等于设计尺寸**，不再随舞台等比放大
+   （现在 k≈1.024，差别约 2.4%，看不出来；视口特别大时它们会显得偏小）。
+   对"按钮/面板"这类 chrome 来说，恒定像素尺寸本身也是更合理的选择 —— 若要它跟着舞台缩放，
+   把下面这段整块删掉即可回到旧行为。 */
+#hs-settings,
+#hs-view {
+	transform: scale(calc(1 / var(--hs-stage-k, 1)));
+	transform-origin: right top;
+}
+
+#endturn {
+	/* ⚠ 必须带 `!important`：段 2 里有一条 `#endturn { transform: none !important }`
+	   （当年是为了压掉**上游写进行内的** transform，那条依赖已随上游删除）——
+	   同优先级下后写的赢，但 `!important` 只跟 `!important` 比，所以这里也得带上。 */
+	transform: scale(calc(1 / var(--hs-stage-k, 1))) !important;
+	transform-origin: right center;
+}
+
+#hs-quest {
+	transform: scale(calc(1 / var(--hs-stage-k, 1)));
+	transform-origin: right bottom;
+}

@@ -223,7 +223,7 @@
       W.HS_FREE = null;
       if (档) {
         W.HS_FREE = { slots: 档, hpWritten: 写('.playerHeroHealth', 30) && 写('.opposingHeroHealth', 30) };
-        写('#opponentlabel', '自由对练 · ' + 档 + ' 格');
+        /* 对手名不再写标签（#opponentlabel 已删）；对手是谁由关卡数据与 AI 档位决定 */
       }
       return { 关卡: null, 自由档: 档, slots: W.HS_SLOTS };
     }
@@ -237,7 +237,7 @@
     //    沙盒里由适配层保证骨架先注入再调这里）
     var okP = 写('.playerHeroHealth', 关卡.playerHp);
     var okO = 写('.opposingHeroHealth', 关卡.opponentHp);
-    写('#opponentlabel', 关卡.opponentLabel);
+    /* 同上：`#opponentlabel` 已从 index.html 删除，关卡不再往它写名字 */
     W.CAMPAIGN.pre = { hpWritten: okP && okO };
     return { 关卡: 关卡, 自由档: 0, slots: W.HS_SLOTS };
   }
